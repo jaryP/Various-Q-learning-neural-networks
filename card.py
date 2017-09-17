@@ -260,96 +260,124 @@ class Game:
 
     def startGame(self, verbose = 1):
 
-        d = self.deck
-        np.random.shuffle(d)
-        last = 0
-        #agents = np.asarray([Agent(d[:3], 1,type='intelligent'),Agent(d[3:6], 2)])
-        a2 = Agent(d[:3], 1,type='intelligent')
-        a1 = Agent(d[3:6], 2)
-        self.table = self.Table(d[6:10])
-        #self.updateState(a1,a2)
-        print(len(self.table.cards))
-        d = d[10:]
-        #self.updateState(a1,a2)
-        if verbose:
-            print('Drawing... Remaining cards: ', len(d))
+        points = [0,0]
 
         while True:
-            if len(a1.getHand())==0 and len(a2.getHand())==0:
-                a1.setHand(d[:3])
-                a2.setHand(d[3:6])
-                d=d[6:]
-                if verbose:
-                    print()
-                    print('Drawing... Remaining cards: ', len(d))
 
+            d = self.deck
+            np.random.shuffle(d)
+
+            last = 0
+            agents = np.asarray([Agent(d[:3], 1,type='intelligent'),Agent(d[3:6], 2)])
+
+            a2 = Agent(d[:3], 1,type='intelligent')
+            a1 = Agent(d[3:6], 2)
+
+            self.table = self.Table(d[6:10])
+            #self.updateState(a1,a2)
+            #print(len(self.table.cards))
+            d = d[10:]
+            #self.updateState(a1,a2)
             if verbose:
-                print('\nGiocatore 1:\n\t',end='')
-                for c in a1.getHand():
-                    print(c,end=', ')
+                print('Drawing... Remaining cards: ', len(d))
 
-                print('\nGiocatore 2:\n\t',end='')
-                for c in a2.getHand():
-                    print(c, end=', ')
+            while True:
 
-            print('\nCarte a tavolo:\n\t', end='')
-            for i in self.table.cards:
-                print(i, end=', ')
-            print()
+                if len(a1.getHand())==0 and len(a2.getHand())==0:
+                    a1.setHand(d[:3])
+                    a2.setHand(d[3:6])
+                    d=d[6:]
+                    if verbose:
+                        print()
+                        print('Drawing... Remaining cards: ', len(d))
 
-            self.updateState(a1, a2)
-
-            r = a1.move(self.table,verbose)
-
-            if r:
-                last = a1.id
-                if a1.isIntelligent():
-                    a1.incrementReward(self.calculatePickReward(r))
-
-            r = a2.move(self.table,verbose)
-            if r:
-                last = a2.id
-                if a2.isIntelligent():
-                    a2.incrementReward(self.calculatePickReward(r))
-
-            #exit()
-            if True:
-                print(self.state)
-                input("Press Enter to continue...")
-            if len(d) == 0 and len(a1.getHand())==0 and len(a2.getHand())==0:
-
-                print('GIOCO FINITO')
                 if verbose:
-                    print('\nCarte a tavolo:\n\t', end='')
+                    print('\nGiocatore 1:\n\t',end='')
+                    for c in a1.getHand():
+                        print(c,end=', ')
 
+                    print('\nGiocatore 2:\n\t',end='')
+                    for c in a2.getHand():
+                        print(c, end=', ')
+
+                    print('\nCarte a tavolo:\n\t', end='')
                     for i in self.table.cards:
                         print(i, end=', ')
                     print()
 
-                if len(self.table.cards) != 0:
-                    if last == 1:
-                        if verbose:
-                            print('Player 1 takes all the remaining cards')
-                        if a1.isIntelligent():
-                            a1.incrementReward(len(self.table.cards))
-                        a1.takeCards(self.table.cards)
-                    else:
-                        if verbose:
-                            print('Player 2 takes all the remaining cards')
-
-                        if a2.isIntelligent():
-                            a2.incrementReward(len(self.table.cards))
-                        a2.takeCards(self.table.cards)
-
-                self.table.cards = []
                 self.updateState(a1, a2)
-                print(self.state)
 
-                print(self.calculateScore(a1,a2))
-                #print('Toltal reward: ',a1.reward)
+                r = a1.move(self.table,verbose)
 
+                if r:
+                    last = a1.id
+                    if a1.isIntelligent():
+                        a1.incrementReward(self.calculatePickReward(r))
+
+                self.updateState(a1, a2)
+
+                r = a2.move(self.table,verbose)
+                if r:
+                    last = a2.id
+                    if a2.isIntelligent():
+                        a2.incrementReward(self.calculatePickReward(r))
+
+                self.updateState(a1, a2)
+
+                #exit()
+                if False:
+                    print(self.state)
+                    input("Press Enter to continue...")
+
+                if len(d) == 0 and len(a1.getHand())==0 and len(a2.getHand())==0:
+
+                    print('MANO FINITA')
+                    if verbose:
+                        print('\nCarte a tavolo:\n\t', end='')
+
+                        for i in self.table.cards:
+                            print(i, end=', ')
+                        print()
+
+                    if len(self.table.cards) != 0:
+                        if last == 1:
+                            if verbose:
+                                print('Player 1 takes all the remaining cards')
+                            if a1.isIntelligent():
+                                a1.incrementReward(len(self.table.cards))
+                            a1.takeCards(self.table.cards)
+                        else:
+                            if verbose:
+                                print('Player 2 takes all the remaining cards')
+
+                            if a2.isIntelligent():
+                                a2.incrementReward(len(self.table.cards))
+                            a2.takeCards(self.table.cards)
+
+                    self.table.cards = []
+                    self.updateState(a1, a2)
+                    #print(self.state)
+
+                    s1, s2 = self.calculateScore(a1,a2)
+                    points[0] += s1
+                    points[1] += s2
+                    print(s1,s2)
+                    print(points)
+                    input("Press Enter to continue...")
+
+                    #print('Toltal reward: ',a1.reward)
+
+                    break
+
+            if points[0] == points[1] and points[0] == 11:
+                print('PAREGGIO')
                 break
-
+            elif points[0] >=11:
+                print('VINCE GIOCATORE 1')
+                break
+            elif points[1]>=11:
+                print('VINCE GIOCATORE 2')
+                break
 
 if __name__ == '__main__':
     g = Game()
