@@ -61,7 +61,6 @@ class Card:
 
 class Agent:
 
-
     def __init__(self, hand, id, type='random'):
         self.type = type
         self.id = id
@@ -104,7 +103,9 @@ class Agent:
                 print('With: '+str(c)+'('+str(c.number)+', '+str(c.seme)+') ')
 
             if len(table.cards) == 0:
+                print('SCOPA DEL GIOCATORE',self.id)
                 self.scope +=1
+
             return roundTaken
 
         else:
@@ -117,7 +118,8 @@ class Agent:
         return self.type == 'intelligent'
 
     def takeCards(self,cards):
-        taken.append(cards)
+        for c in cards:
+            self.taken.append(c)
 
     def incrementReward(self,r):
         self.reward += r
@@ -130,6 +132,12 @@ class Agent:
 
     def setHand(self,h):
         self.hand = h
+
+    def getId(self):
+        return self.id
+
+    def getTaken(self):
+        return self.taken
 
 class Game:
 
@@ -182,8 +190,8 @@ class Game:
             return self.deck
 
     def calculateScore(self,a1,a2):
-        t1 = a1.taken
-        t2 = a2.taken
+        t1 = a1.getTaken()
+        t2 = a2.getTaken()
         d = 0
         s = 0
         sb = 0
@@ -191,8 +199,10 @@ class Game:
         p2 = 0
 
         for c in t1:
+
             if c.seme == 0:
                 d+=1
+
             if c.number == 7:
                 s+=1
                 if c.seme == 0:
@@ -217,36 +227,43 @@ class Game:
             p1+=1
         elif len(t2) >20:
             p2+=1
-
+        print('PRESE:',len(t1))
         p1+=a1.scope
         p2+=a2.scope
 
         return p1,p2
 
     def calculatePickReward(self, pick):
-        return len(pick)
+        r = 0
+        if len(self.table.cards) == 0:
+            r +=10
+        return len(pick)+r
 
-    def updateState(self,a1,a2):
+    def updateState(self,a1,a2,forAgentId=1):
 
         for c in a1.taken:
-            self.state[c.seme][c.number-1] = a1.id
+            self.state[c.seme][c.number-1] = a1.getId()
 
         for c in a2.taken:
-            self.state[c.seme][c.number-1] = a2.id
+            self.state[c.seme][c.number-1] = a2.getId()
 
         for c in self.table.cards:
-            self.state[c.seme][c.number-1] = -1
+            self.state[c.seme][c.number-1] = 3
 
-        if a1.isIntelligent():
-            for c in a1.hand:
-                self.state[c.seme][c.number - 1] = 3
+        if a1.getId() == forAgentId:
+            for c in a1.getHand():
+                self.state[c.seme][c.number - 1] = a1.getId()* -1
+
+        if a2.getId() == forAgentId:
+            for c in a2.getHand():
+                self.state[c.seme][c.number - 1] = a2.getId() * -1
 
     def startGame(self, verbose = 1):
 
         d = self.deck
         np.random.shuffle(d)
         last = 0
-        agents = np.asarray([Agent(d[:3], 1,type='intelligent'),Agent(d[3:6], 2)])
+        #agents = np.asarray([Agent(d[:3], 1,type='intelligent'),Agent(d[3:6], 2)])
         a2 = Agent(d[:3], 1,type='intelligent')
         a1 = Agent(d[3:6], 2)
         self.table = self.Table(d[6:10])
@@ -258,10 +275,7 @@ class Game:
             print('Drawing... Remaining cards: ', len(d))
 
         while True:
-
-
             if len(a1.getHand())==0 and len(a2.getHand())==0:
-
                 a1.setHand(d[:3])
                 a2.setHand(d[3:6])
                 d=d[6:]
@@ -271,11 +285,11 @@ class Game:
 
             if verbose:
                 print('\nGiocatore 1:\n\t',end='')
-                for c in a1.hand:
+                for c in a1.getHand():
                     print(c,end=', ')
 
                 print('\nGiocatore 2:\n\t',end='')
-                for c in a2.hand:
+                for c in a2.getHand():
                     print(c, end=', ')
 
             print('\nCarte a tavolo:\n\t', end='')
@@ -286,11 +300,12 @@ class Game:
             self.updateState(a1, a2)
 
             r = a1.move(self.table,verbose)
-            
+
             if r:
                 last = a1.id
                 if a1.isIntelligent():
                     a1.incrementReward(self.calculatePickReward(r))
+
             r = a2.move(self.table,verbose)
             if r:
                 last = a2.id
@@ -301,7 +316,7 @@ class Game:
             if True:
                 print(self.state)
                 input("Press Enter to continue...")
-            if len(d) == 0 and len(a1.hand)==0 and len(a2.hand)==0:
+            if len(d) == 0 and len(a1.getHand())==0 and len(a2.getHand())==0:
 
                 print('GIOCO FINITO')
                 if verbose:
@@ -317,16 +332,14 @@ class Game:
                             print('Player 1 takes all the remaining cards')
                         if a1.isIntelligent():
                             a1.incrementReward(len(self.table.cards))
-                        for c in self.table.cards:
-                            a1.taken.append(c)
+                        a1.takeCards(self.table.cards)
                     else:
                         if verbose:
                             print('Player 2 takes all the remaining cards')
 
                         if a2.isIntelligent():
                             a2.incrementReward(len(self.table.cards))
-                        for c in self.table.cards:
-                            a2.taken.append(c)
+                        a2.takeCards(self.table.cards)
 
                 self.table.cards = []
                 self.updateState(a1, a2)
