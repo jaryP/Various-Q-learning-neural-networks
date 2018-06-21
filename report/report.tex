@@ -1,0 +1,140 @@
+
+\documentclass[10pt]{article} 
+\usepackage[utf8]{inputenc} 
+\usepackage[margin=1in]{geometry} 
+%\usepackage{pgfplots,wrapfig}
+\usepackage{placeins}
+\geometry{a4paper} 
+\usepackage{multirow}
+%\usepackage{caption}
+\usepackage{graphicx}
+%\usepackage{subcaption}
+\usepackage{amsmath}
+%\usepackage{booktabs}
+%\usepackage{adjustbox}
+\usepackage{multicol}
+\usepackage{tikz}
+\usepackage{subcaption}
+\usepackage{graphicx}
+\usepackage{pgfplots}
+\usepackage{wrapfig}
+
+
+\vspace{0cm}
+\setlength{\parindent}{0cm}
+\setlength{\parindent}{1em}
+\title{ 
+	Probabilistic reasoning and learning project report \protect\\ Play Atari games using neural networks \protect\\  \large a.a. 2017-2018}
+\author{ Jary Pomponi}
+\date{\vspace{-5ex}}
+
+\newenvironment{Figure}
+{\par\medskip\noindent\minipage{\linewidth}}
+{\endminipage\par\medskip}
+
+\begin{document}
+	\maketitle
+\begin{multicols}{2}
+\section{Introduction}
+\section{Reinforcement learning}
+\section{Deep Q Network (DQN)}
+\section{Implementation}
+\section{Empirical evaluations}
+\iffalse
+\begin{center}
+	\centering
+	\includegraphics[height=45mm]{../results/rep_attr.png}
+	\setcounter{figure}{0}  
+	\label{fig}  
+	\captionof{figure}{Repulsive and attractive factor varying $\sigma$}
+\end{center}
+\section{Empirical evaluation and conclusions}
+\begin{figure*}
+	\centering
+	\begin{subfigure}[b]{\textwidth}
+		\centering
+	\begin{minipage}{.32\linewidth}
+		\centering\includegraphics[width=\linewidth]{../results/comm_3.png}
+		3 agents.
+	\end{minipage}
+	\begin{minipage}{.32\linewidth}
+		\centering\includegraphics[width=\linewidth]{../results/comm_4.png}
+		4 agents.
+	\end{minipage}
+	\begin{minipage}{.32\linewidth}
+		\centering\includegraphics[width=\linewidth]{../results/comm_5.png}
+		5 agents.
+	\end{minipage}
+		\begin{minipage}{.32\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/comm_6.png}
+			6 agents.
+		\end{minipage}
+		\begin{minipage}{.32\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/comm_7.png}
+			7 agents.
+		\end{minipage}
+		\begin{minipage}{.32\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/comm_8.png}
+			8 agents.
+		\end{minipage}
+		%\captionof{figure}{Experiments on communication range varying agents and fires}
+	\end{subfigure}
+\setcounter{figure}{1}    
+\captionof{figure}{Experiments on communication range varying agents and fires}
+\end{figure*}
+\begin{figure*}
+	\centering
+	\begin{subfigure}[b]{\textwidth}
+		
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_3_1.png}
+			3 agents.
+		\end{minipage}
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_4_1.png}
+			4 agents.
+		\end{minipage}
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_5_1.png}
+			5 agents.
+		\end{minipage}
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_6_1.png}
+			6 agents.
+		\end{minipage}
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_7_1.png}
+			7 agents.
+		\end{minipage}
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_8_1.png}
+			8 agents.
+		\end{minipage}
+		\captionof{figure}{Experiments on fields ranges with one fire}
+	\end{subfigure}
+	
+	\begin{subfigure}[b]{\textwidth}
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_4_2.png}
+			4 agents.
+		\end{minipage}
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_6_2.png}
+			6 agents.
+		\end{minipage}
+		\begin{minipage}{.33\linewidth}
+			\centering\includegraphics[width=\linewidth]{../results/fixed_var_8_2.png}
+			8 agents.
+		\end{minipage}
+
+		\captionof{figure}{Experiments in fields ranges with two fires}
+	\end{subfigure}
+	
+	\setcounter{figure}{2}    
+	\captionof{figure}{Experiments on communication range varying agents and fires}
+\end{figure*}
+\fi
+
+\end{multicols}
+\newpage
+\end{document}

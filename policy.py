@@ -1,6 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 
+
 class Policy(ABC):
     def __init__(self, policy_name):
         self.name = policy_name
@@ -14,7 +15,6 @@ class Policy(ABC):
     def get_value(self):
         pass
 
-
 class GreedyPolicy(Policy):
     def __init__(self):
         super(GreedyPolicy, self).__init__('greedy')
@@ -24,7 +24,7 @@ class GreedyPolicy(Policy):
         return action
 
     def get_value(self):
-        return 'Greedy'
+        return None
 
 
 class RandomPolicy(Policy):
@@ -44,7 +44,7 @@ class EpsPolicy(Policy):
         super(EpsPolicy, self).__init__('epsGreedy')
         self.eps = eps
         if other_pol is None:
-            other_pol = RandomPolicy
+            other_pol = RandomPolicy()
         self.other_pol = other_pol
 
     def select_action(self, q_values):
@@ -58,13 +58,13 @@ class EpsPolicy(Policy):
         return action
 
     def get_value(self):
-        return 'Eps: {}, Other pol: {}'.format(self.eps, self.other_pol.get_value())
+        return self.eps
 
 
 class AnnealedPolicy(Policy):
 
     def __init__(self, inner_policy, attr, value_max, value_min, value_test, nb_steps, train=True,
-                 lower_prob_policy=None):
+                 lower_prob_policy=None, to_max=False):
 
         assert (hasattr(inner_policy, attr))
 
@@ -82,10 +82,16 @@ class AnnealedPolicy(Policy):
         self.nb_steps = nb_steps
         self.train = train
         self.step = 0
+        self.to_max = to_max
+        if to_max:
+            setattr(self.inner_policy, self.attr, value_min)
+        else:
+            setattr(self.inner_policy, self.attr, value_max)
+
 
     def get_current_value(self):
         if self.train:
-            value = self._calcualte_value()
+            value = self.inner_policy.get_value()
         else:
             value = self.value_test
         return value
@@ -94,20 +100,25 @@ class AnnealedPolicy(Policy):
 
         # v = self._calcualte_value()
         # if np.random.uniform() < v:
-        setattr(self.inner_policy, self.attr, self._calcualte_value())
-        self.step += 1
+        # setattr(self.inner_policy, self.attr, self.linear_step())
+        self.linear_step()
         return self.inner_policy.select_action(**kwargs)
         # else:
         #     return self.lower_prob_policy.select_action(**kwargs)
 
-    def _calcualte_value(self):
+    def linear_step(self):
         a = -float(self.value_max - self.value_min) / float(self.nb_steps)
-        b = float(self.value_max)
-        value = max(self.value_min, a * float(self.step) + b)
+        if self.to_max:
+            a *= -1
+            value = min(self.value_max, (a * float(self.step) + float(self.value_min)))
+        else:
+            value = max(self.value_min, (a * float(self.step) + float(self.value_max)))
+        self.step += 1
+        setattr(self.inner_policy, self.attr, value)
         return value
 
     def get_value(self):
-        return 'Annealed  with inner: {}'.format(self.inner_policy.get_value())
+        return self.inner_policy.get_value()
 
 
 class BoltzmannPolicy(Policy):
@@ -127,7 +138,7 @@ class BoltzmannPolicy(Policy):
         return action
 
     def get_value(self):
-        return '{} {}'.format(self.name, self.kt)
+        return self.kt
 
 
 class BoltzmannExplorationPolicy(Policy):
@@ -145,12 +156,16 @@ class BoltzmannExplorationPolicy(Policy):
             return self.exploration.select_action(q_values=q_values)
 
     def get_value(self):
-        return self.name+' '+str(self.exploration.get_value())
+        return self.exploration.get_value()
 
 
 if __name__ == '__main__':
     eps = EpsPolicy(1.0)
 
-    ann = AnnealedPolicy(inner_policy=eps, attr='eps', value_max=1.0, value_min=0.1, value_test=0.5, nb_steps=1000)
+    a = eps.get_value()
+    print(a)
+
+    ann = AnnealedPolicy(inner_policy=eps, attr='eps', value_max=1.0, value_min=0.1, value_test=0.5, nb_steps=1000,
+                        to_max=True)
     for i in range(1100):
-        print(ann.get_current_value(i))
+        print(ann.linear_step())
