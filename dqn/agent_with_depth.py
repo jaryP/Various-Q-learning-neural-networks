@@ -227,7 +227,6 @@ class RamAgent(AbstractAgent):
         mask[np.arange(batch_size), actions] = 1
 
         targets = mask * targets[:, np.newaxis]
-        m = np.max(targets)
 
         errors = target - targets
         errors = np.abs(errors[np.arange(batch_size), actions])
