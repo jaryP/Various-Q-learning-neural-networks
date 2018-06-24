@@ -1,15 +1,19 @@
 import numpy as np
 import pickle
 from abc import ABC, abstractmethod
-from dqn.tree import SumTree
+from dqn.tree_less_mem import SumTree
+import os
 
 
 class Buffer(ABC):
-    def __init__(self, maxlen):
+    def __init__(self, maxlen, max_save=None):
         self.data = [None] * (maxlen + 1)
         self.start = 0
         self.maxlen = maxlen
         self.length = 0
+        # if max_save is None:
+        #     max_save = maxlen+1
+        # self.max_save = max_save
 
     def __len__(self):
         return self.length
@@ -38,15 +42,35 @@ class Buffer(ABC):
         self.data[(self.start + self.length - 1) % self.maxlen] = v
 
     def save(self, path):
-        with open(path, "wb") as file:
-            pickle.dump(self.data, file)
+        # if len(self) >= self.max_save:
+        #     d = {
+        #         'data': self.data[-self.max_save:],
+        #         'start': self.max_save,
+        #         'maxlen': self.maxlen,
+        #         'length': self.max_save
+        #     }
+        # else:
+        d = {
+            'data': self.data,
+            'start': self.start,
+            'maxlen': self.maxlen,
+            'length': self.length
+        }
+        with open(os.path.join(path, 'memory.mem'), 'wb') as f:
+            pickle.dump(d, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load(self, path):
-        with open(path, "rb") as file:
-            self.data = pickle.load(file)
-        self.maxlen = len(self.data)
-        self.length = len([i for i in self.data if i is not None])
+        with open(os.path.join(path, 'memory.mem'), 'rb') as f:
+            d = pickle.load(f)
 
+        for k, v in d.items():
+            if k == 'data':
+                continue
+            setattr(self, k, v)
+
+        self.data = [None] * (self.maxlen + 1)
+        for i, v in enumerate(d['data']):
+            self.data[i] = v
 
 class BinaryHeatTree:
     def __init__(self, max_len):
@@ -110,37 +134,51 @@ class BinaryHeatTree:
 
 
 class SimpleMemory(Buffer):
-    def __init__(self, max_len):
-        super(SimpleMemory, self).__init__(max_len)
+    def __init__(self, max_len, maxsave=None):
+        super(SimpleMemory, self).__init__(max_len, maxsave)
 
     def random_sample(self, **kwargs):
-
         size = kwargs['size']
         depth = kwargs.get('depth', 4)
 
         assert (len(self) > 0)
-        if size > self.maxlen:
-            size = self.maxlen
+        if size > len(self):
+            size = len(self)
 
         idx = np.random.choice(np.arange(len(self)), size, replace=False)
-        _states = []
+
+        data_shape = self.data[0][3].shape
+
+        image = False
+        if len(data_shape) == 1:
+            _states = np.zeros((size, depth+1, data_shape[0]))
+        else:
+            _states = np.zeros((size, depth+1, data_shape[0], data_shape[1]), dtype=np.uint8)
+            image = True
+
         _actions = []
-        _rewards = []
-        _next_states = []
+        _rewards = np.zeros(size)
         _is_done = []
 
-        for i in idx:
-            s = self.data[i][0].copy()
-            _states.append(np.asarray(s))
+        for b, i in enumerate(idx):
+            _states[b, 0] = self.data[i][3]
+            _states[b, 1] = self.data[i][0]
+            for j in range(1, depth):
+                off = i - j
+                if off > 0:
+                    _states[b, j+1] = self.data[off][3]
+            _rewards[b] = self.data[i][2]
             _actions.append(self.data[i][1])
-            _rewards.append(self.data[i][2])
-            s.appendleft(self.data[i][3])
-            _next_states.append(np.asarray(s))
             _is_done.append(self.data[i][4])
-
-        return np.asarray(_states), np.asarray(_actions), np.asarray(_rewards), np.asarray(_next_states), \
-               np.asarray(_is_done)
-
+        if image:
+            return _states[:, 1:, :, :], _actions, _rewards, _states[:, :-1, :, :], np.asarray(_is_done)
+        else:
+            return _states[:, 1:, :], _actions, _rewards, _states[:, :-1, :], np.asarray(_is_done)
+    # def save(self, path):
+    #     self.save(path)
+    #
+    # def load(self, path):
+    #     super().load(path)
 
 class PrioritizedMemory:
 
@@ -176,29 +214,32 @@ class PrioritizedMemory:
 
         data_shape = self.tree.data[0][3].shape
 
-        _states = np.empty((size, depth, data_shape[0], data_shape[1]), dtype=np.uint8)
+        _states = np.zeros((size, depth+1, data_shape[0], data_shape[1]), dtype=np.uint8)
         _actions = []
         _rewards = np.empty(size)
-        _next_states = np.empty((size, depth, data_shape[0], data_shape[1]), dtype=np.uint8)
+        # _next_states = np.zeros((size, depth, data_shape[0], data_shape[1]), dtype=np.uint8)
+
         _is_done = []
         for i in range(size):
             a = segment * i
             b = segment * (i + 1)
             lower_bound = np.random.uniform(a, b)
-            idx, p, data = self.tree.get(lower_bound)
+            idx, p, data, story = self.tree.get(lower_bound, story_len=depth)
             indexes.append(idx)
 
-            s = data[0].copy()
-            _states[i] = np.asarray(s)
-            _actions.append(data[1])
-            _rewards[i] = data[2]
+            # s = data[0].copy()
+            _states[i, 0] = data[3]
+            # _next_states[i, 1] = data[0]
+            _states[i, 1] = data[0]
 
-            s.appendleft(data[3])
-            _next_states[i] = np.asarray(s)
-            del s
+            for j, v in enumerate(story):
+                _states[i, j+2] = v
+            _rewards[i] = data[2]
+            _actions.append(data[1])
             _is_done.append(data[4])
 
-        return np.asarray(_states), _actions, _rewards, np.asarray(_next_states), np.asarray(_is_done), indexes
+
+        return _states[:, 1:, :, :], _actions, _rewards, _states[:, :-1, :, :], np.asarray(_is_done), indexes
 
     def save(self, path):
         self.tree.save(path)
@@ -208,5 +249,12 @@ class PrioritizedMemory:
         # with open(path, "rb") as file:
         #     self.tree = pickle.load(file)
         # self.maxlen = len(self)
+
+# m = PrioritizedMemory(5)
+# s = (prev_states, action, reward, next_state, done, error=reward
+# m.append(1, error=2)
+# m.append(1, error=2)
+# m.append(1, error=2)
+# m.append(1, error=2)
 
 

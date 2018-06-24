@@ -1,4 +1,5 @@
-from keras.layers import Dense, Flatten, merge, Merge, Lambda, RepeatVector, Add, Multiply
+from keras.layers import Dense, Flatten, merge, Merge, Lambda, RepeatVector, Add, Multiply, Flatten, Average, Subtract
+from keras.layers.convolutional import Convolution2D, Conv2D
 from keras.models import Sequential, load_model, Model, Input, clone_model
 from keras.optimizers import Adam, RMSprop, SGD
 from keras.callbacks import ModelCheckpoint
@@ -34,7 +35,7 @@ class AbstractModel(ABC):
 
     def __init__(self, state_size=None, action_size=None, lr=0.001, depth=1):
         self.model = None
-        self._target_net = self.model
+        self._target_net = None
         self.state_size = state_size
         self.action_size = action_size
         self.optim = RMSprop(lr=lr)
@@ -53,7 +54,10 @@ class AbstractModel(ABC):
         online = self.model.predict(x, batch_size=batch, verbose=verbose)
         if x_t is None:
             return online
-        target = self._target_net.predict(x_t, batch_size=batch, verbose=verbose)
+        if self._target_net is None:
+            target = self.model.predict(x, batch_size=batch, verbose=verbose)
+        else:
+            target = self._target_net.predict(x_t, batch_size=batch, verbose=verbose)
         return online, target
 
     def save(self, path):
@@ -61,7 +65,7 @@ class AbstractModel(ABC):
         self.model.save_weights(os.path.join(path, 'model_weights.h5'))
 
     def load(self, path):
-        self. model = load_model(os.path.join(path, 'model.h5'))
+        self. model = load_model(os.path.join(path, 'model.h5'), custom_objects={'huber_loss': huber_loss})
 
     def on_fit_end(self):
         pass
@@ -73,8 +77,7 @@ class DoubleDQNWrapper(AbstractModel):
         super(DoubleDQNWrapper, self).__init__()
 
         self.model, self._target_net = self._model_creation(network)
-        self._target_net = self.model
-        self.delta = 0.01
+        # self._target_net = self.model
         self._time = 0
         self.update_time = update_time
         self.state_size = network.state_size
@@ -98,14 +101,16 @@ class DoubleDQNWrapper(AbstractModel):
         self._target_net.set_weights(self.model.get_weights())
 
     def save(self, path):
-        self.model.save(os.path.join(path, 'model.h5'))
-        self.model.save_weights(os.path.join(path, 'model_weights.h5'))
-        self._target_net.save(os.path.join(path, 'model.h5'))
-        self._target_net.save_weights(os.path.join(path, 'model_weights.h5'))
+        # self.model.save(os.path.join(path, 'model.h5'))
+        # self.model.save_weights(os.path.join(path, 'model_weights.h5'))
+        super().save(path)
+        self._target_net.save(os.path.join(path, 'target_model.h5'))
+        self._target_net.save_weights(os.path.join(path, 'target_model_weights.h5'))
 
     def load(self, path):
-        self.model = load_model(os.path.join(path, 'model.h5'))
-        self._target_net= load_model(os.path.join(path, 'model.h5'))
+        # self.model = load_model(os.path.join(path, 'model.h5'),  custom_objects={'hube_loss': huber_loss})
+        super().save(path)
+        self._target_net = load_model(os.path.join(path, 'target_model.h5'),  custom_objects={'huber_loss': huber_loss})
 
 
 class DenseDQN(AbstractModel):
@@ -123,21 +128,25 @@ class DenseDQN(AbstractModel):
         assert(self.state_size is not None and self.action_size is not None)
 
         in_layer = Input((self.depth, self.state_size, ))
+        reg = Lambda(lambda x: x / 255.0, output_shape=(self.depth, self.state_size, ))(in_layer)
+
         mask = Input((self.action_size, ))
 
-        last_layer = in_layer
+        last_layer = Flatten(data_format='channels_first')(reg)
 
-        last_layer = Dense(layers_size[0], activation='relu', kernel_initializer='he_uniform')(last_layer)
+        last_layer = Dense(layers_size[0], activation='relu')(last_layer)
         for i in layers_size[1:]:
-            last_layer = Dense(i, activation='relu', kernel_initializer='he_uniform')(last_layer)
-        last_layer = Dense(self.action_size, activation='linear')(last_layer)
+            last_layer = Dense(i, activation='relu')(last_layer)
 
-        last_layer = Lambda(lambda x: x[:, 0, :], output_shape=(self.action_size, ))(last_layer)
+        # last_layer = Flatten(name='last_layer')(last_layer)
+        last_layer = Dense(self.action_size)(last_layer)
+
+        # last_layer = Lambda(lambda x: x[:, 0, :], output_shape=(self.action_size, ))(last_layer)
 
         filtered_output = Multiply()([last_layer, mask])
 
         model = Model(inputs=[in_layer, mask], outputs=filtered_output)
-        model.compile(loss='mse', optimizer=self.optim)
+        model.compile(loss=huber_loss, optimizer=self.optim)
         return model
 
 
@@ -161,23 +170,22 @@ class DuelDenseDQN(AbstractModel):
         in_layer = Input(shape=(self.depth, self.state_size, ))
         mask = Input((self.action_size, ))
 
-        last_layer_adv = in_layer
-        last_layer_val = in_layer
+        last_layer_adv = Flatten()(in_layer)
+        last_layer_val = Flatten()(in_layer)
 
         for i in layers_size:
-            last_layer_adv = Dense(i, activation='relu', kernel_initializer='he_uniform')(last_layer_adv)
+            last_layer_adv = Dense(i, activation='relu')(last_layer_adv)
 
         for i in layers_size_val:
-            last_layer_val = Dense(i, activation='relu', kernel_initializer='he_uniform')(last_layer_val)
+            last_layer_val = Dense(i, activation='relu')(last_layer_val)
 
-        advantage_layer = Dense(self.action_size, kernel_initializer='he_uniform',
-                                activation='linear')(last_layer_adv)
+        advantage_layer = Dense(self.action_size, activation='linear')(last_layer_adv)
 
-        advantage_layer = Lambda(lambda x: x[:, 0, :], output_shape=(self.action_size, ))(advantage_layer)
+        # advantage_layer = Lambda(lambda x: x[:, 0, :], output_shape=(self.action_size, ))(Flatten()(advantage_layer))
 
-        value_layer = Dense(1, kernel_initializer='he_uniform', activation='linear')(last_layer_val)
+        value_layer = Dense(1, activation='linear')(last_layer_val)
 
-        value_layer = Lambda(lambda x: x[:, 0, :], output_shape=(self.action_size, ))(value_layer)
+        # value_layer = Lambda(lambda x: x[:, 0, :], output_shape=(self.action_size, ))(value_layer)
 
         value_layer = Lambda(function=lambda x: K.repeat_elements(x, self.action_size, axis=1),
                              output_shape=lambda s: s)(value_layer)
@@ -189,4 +197,86 @@ class DuelDenseDQN(AbstractModel):
         model = Model(inputs=[in_layer, mask], outputs=filtered_output)
 
         model.compile(loss='mse', optimizer=self.optim)
+        return model
+
+
+class ConvDQM(AbstractModel):
+    def __init__(self, action_size=None, state_size=None, lr=0.001, depth=1):
+
+        super(ConvDQM, self).__init__(state_size, action_size, depth=depth, lr=lr)
+
+        self.learning_rate = lr
+        self._time = 0
+        self.model = self._model_creation()
+        # self._target_net = self.model
+
+    def _model_creation(self, **kwargs):
+        in_shape = (self.depth, self.state_size[0], self.state_size[1], )
+
+        frames_input = Input(shape=in_shape, name='frames')
+        mask = Input(shape=(self.action_size,), name='mask')
+
+        normz = Lambda(lambda x: x / 255.0, output_shape=in_shape)(frames_input)
+
+        conv = Convolution2D(kernel_size=(8, 8), filters=32, strides=(4, 4), activation='relu',
+                             data_format='channels_first')(normz)
+        conv = Convolution2D(kernel_size=(4, 4), filters=64, strides=(2, 2), activation='relu',
+                             data_format='channels_first')(conv)
+        conv = Conv2D(64, (3, 3), strides=(1, 1), activation='relu')(conv)
+        flt = Flatten(data_format='channels_first')(conv)
+
+        flt = Dense(256, activation='relu', name='last_layer')(flt)
+        flt = Dense(self.action_size)(flt)
+
+        flt = Multiply()([flt, mask])
+
+        model = Model(input=[frames_input, mask], output=flt)
+        # model = Model(input=frames_input, outputs=flt)
+        model.compile(self.optim, loss=huber_loss)
+        return model
+
+
+class ConvDDQN(AbstractModel):
+    def __init__(self, action_size=None, state_size=None, lr=0.001, depth=1):
+
+        super(ConvDDQN, self).__init__(state_size, action_size, depth=depth, lr=lr)
+
+        self.learning_rate = lr
+        self._time = 0
+        self.model = self._model_creation()
+        # self._target_net = None
+
+    def _model_creation(self, **kwargs):
+        in_shape = (self.depth, self.state_size[0], self.state_size[1], )
+
+        frames_input = Input(shape=in_shape, name='frames')
+        mask = Input(shape=(self.action_size,), name='mask')
+
+        normz = Lambda(lambda x: x / 255.0, output_shape=in_shape)(frames_input)
+
+        conv = Convolution2D(kernel_size=(8, 8), filters=32, strides=(4, 4), activation='relu',
+                             data_format='channels_first')(normz)
+        conv = Convolution2D(kernel_size=(4, 4), filters=64, strides=(2, 2), activation='relu',
+                             data_format='channels_first')(conv)
+        conv = Conv2D(64, (3, 3), strides=(1, 1), activation='relu')(conv)
+        flt = Flatten(data_format='channels_first')(conv)
+
+        advantage_flt = Dense(256, activation='relu', )(flt)
+        advantage = Dense(self.action_size, name='advantege_layer')(advantage_flt)
+
+        advantage_sub = Lambda(function=lambda x: K.mean(x,  axis=1, keepdims=True))(advantage)
+
+        value_flt = Dense(128, activation='relu', )(flt)
+        value = Dense(1, name='value_layer')(value_flt)
+
+        value = Lambda(function=lambda x: K.repeat_elements(x, self.action_size, axis=1))(value)
+
+        out = Subtract()([advantage, advantage_sub])
+        out = Add()([out, value])
+
+        flt = Multiply()([out, mask])
+
+        model = Model(input=[frames_input, mask], output=flt)
+        # model = Model(input=frames_input, outputs=flt)
+        model.compile(self.optim, loss=huber_loss)
         return model

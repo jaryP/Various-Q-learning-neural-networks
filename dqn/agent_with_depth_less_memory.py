@@ -1,7 +1,7 @@
 import tqdm
 import os
-# os.environ['THEANO_FLAGS'] = "device=cuda,floatX=float32"
-#os.environ['THEANO_FLAGS'] = 'device=cuda,floatX=float32'
+os.environ['THEANO_FLAGS'] = "device=cuda,floatX=float32"
+os.environ['THEANO_FLAGS'] = 'device=cuda,floatX=float32'
 os.environ['CPLUS_INCLUDE_PATH'] = '/usr/local/cuda-9/include'
 from abc import ABC, abstractmethod
 from dqn.memory_with_depth import PrioritizedMemory
@@ -13,7 +13,10 @@ from skimage.transform import resize
 import numpy as np
 import json
 import pickle
+from random import randint
 from collections import deque
+from dqn.memory_with_depth_less_memory import PrioritizedMemory as pr_less
+from dqn.memory_with_depth_less_memory import SimpleMemory
 np.random.seed(19)
 
 
@@ -42,7 +45,7 @@ class AbstractAgent(ABC):
 
         self.results = {'info': attr}
 
-        self.memory = PrioritizedMemory(max_len=max_len_memory)
+        self.memory = SimpleMemory(max_len=max_len_memory)
 
         if load_prev:
             path = sorted([int(x) for x in os.listdir(self.log_dir) if os.path.isdir(
@@ -69,54 +72,8 @@ class AbstractAgent(ABC):
     def add_replay(self, prev_states, action, r, next_state, finished, error):
         self.memory.append((prev_states, action, r, next_state, finished), error=error)
 
-    # def train(self):
-    #     if len(self.memory) < self.to_observe:
-    #         return None
-    #
-    #     batch_size = min(self.batch_size, len(self.memory))
-    #     # states, actions, rewards, next_states, done = self.memory.random_sample(size=batch_size, depth=self.depth)
-    #     errors = []
-    #
-    #     ret = self.memory.random_sample(size=batch_size, depth=1)
-    #
-    #     prior = len(ret) == 6
-    #
-    #     states, actions, rewards, next_states, done = ret[:5]
-    #
-    #     target, target_val = self.model.predict([states, np.ones((len(states), self.action_size), dtype=np.uint)],
-    #                                             [next_states, np.ones((len(states), self.action_size), dtype=np.uint)])
-    #
-    #     t = []
-    #     acts = []
-    #
-    #     for i in range(batch_size):
-    #
-    #         ac = np.zeros(self.action_size)
-    #         ac[actions[i]] = 1
-    #         acts.append(ac)
-    #         com = target[i]
-    #
-    #         if done[i]:
-    #             com[actions[i]] = 0
-    #         else:
-    #             v = rewards[i] + self.gamma() * (np.amax(target_val[i]))
-    #             com[actions[i]] = v
-    #         t.append(com)
-    #         errors.append(abs(target[i][actions[i]] - com[actions[i]]))
-    #
-    #     t = np.asarray(t)
-    #     acts = np.asarray(acts)\
-    #
-    #     h = self.model.fit([states, acts], t, batch=batch_size,
-    #                        epochs=1, verbose=0)
-    #
-    #     if prior:
-    #         idx = ret[-1]
-    #         for i in range(len(idx)):
-    #             self.memory.update_tree(idx[i], errors[i])
-    #
-    #     return h
     def train(self):
+
         if len(self.memory) < self.to_observe:
             return None
 
@@ -129,7 +86,12 @@ class AbstractAgent(ABC):
 
         target, target_val = self.model.predict([states, mask], [next_states, mask])
 
-        target_val[done] = 0
+        # target_val[done] = rewards[done]
+
+        for i, d in enumerate(done):
+            if d:
+                target_val[i] = rewards[i]
+
         targets = rewards + self.gamma() * np.amax(target_val, axis=1)
         actions = np.asarray(actions)
         mask = np.zeros((batch_size, self.action_size))
@@ -137,13 +99,13 @@ class AbstractAgent(ABC):
 
         targets = mask * targets[:, np.newaxis]
 
-        errors = target - targets
-        errors = np.abs(errors[np.arange(batch_size), actions])
-
-        h = self.model.fit([states, mask], targets, batch=batch_size,
-                           epochs=1, verbose=0)
+        h = self.model.fit([states, mask], targets, batch=batch_size, epochs=1, verbose=0)
 
         if len(ret) == 6:
+
+            errors = target - targets
+            errors = np.abs(errors[np.arange(batch_size), actions])
+
             idx = ret[-1]
             for i in range(len(idx)):
                 self.memory.update_tree(idx[i], errors[i])
@@ -163,7 +125,7 @@ class AbstractAgent(ABC):
             with open(os.path.join(pt, 'gamma.pol'), 'wb') as f:
                 pickle.dump(self.gamma, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-            self.memory.save(os.path.join(pt, 'memory.mem'))
+            self.memory.save(pt)
             self.model.save(pt)
 
             print('Last calculated reward: {} at episode: {} with mean: {:3f} eps: {:3f} and memory size: {}'.format(
@@ -190,7 +152,7 @@ class AbstractAgent(ABC):
             with open(os.path.join(path, 'gamma.pol'), 'rb') as f:
                 self.gamma = pickle.load(f)
 
-            self.memory.load(os.path.join(path, 'memory.mem'))
+            self.memory.load(path)
             self.model.load(path)
 
             print('Agent correctly loaded')
@@ -209,11 +171,24 @@ class AbstractAgent(ABC):
     def act(self, s, no_op):
         s = [s, np.ones((1, self.action_size), dtype=np.uint)]
         act_values = self.model.predict(s)[0]
-        # print(act_values)
         action = self.pol.select_action(q_values=act_values)
-        if action == 0 and no_op == self.no_op_ep:
-            action = np.random.choice(range(1, self.action_size))
-        return action
+        # if action == 0 and no_op == self.no_op_ep:
+        #     while action == 0:
+        #         action = np.random.choice(range(1, self.action_size))
+        return int(action), [float(q) for q in act_values]
+
+    def update_results(self, r, noop, qvals, f):
+
+        rewards = self.results.get('rewards', [])
+        rewards.append(r)
+
+        nop = self.results.get('no_op', [])
+        nop.append(noop)
+
+        qs = self.results.get('q_values', [])
+        qs.append(qvals)
+
+        self.results.update({'last ep': f, 'rewards': rewards, 'no_op': nop, 'q_values': qs})
 
 
 class RamAgent(AbstractAgent):
@@ -226,66 +201,78 @@ class RamAgent(AbstractAgent):
 
     def learn(self, episodes, visualize=False, verbose=False, cap=0, backup=10):
 
-        frames = self.results.get('last ep', 0)+1
+        starting_eps = self.results.get('last ep', 0)+1
 
-        while frames < episodes:
+        for ep in range(starting_eps, episodes):
 
             observation = self.env.reset()
+
+            for _ in range(randint(1, self.no_op_ep)):
+                observation, _, _, _ = self.env.step(0)
+
             done = False
-            i = 0
             no_op = 0
             prev_states = deque(maxlen=self.depth)
+
             for i in range(self.depth):
                 prev_states.append(np.zeros(self.state_size))
+            prev_states.appendleft(observation)
+
+            R = 0
+
+            eps_q_vals = []
 
             while not done:
 
                 for _ in range(self.depth):
+
                     last = np.asarray(prev_states)
                     last = last[np.newaxis, :, :]
-                    action = self.act(last, no_op)
+                    action, q_vals = self.act(last, no_op)
 
                     if action == 0:
                         no_op += 1
+                    # if frames >= self.to_observe*2:
+                    #     self.no_op_ep = -1
+                    eps_q_vals.append((action, q_vals))
 
                     next_state, reward, done, _ = self.env. step(action)
                     prev_states.appendleft(next_state)
 
                     reward = np.clip(reward, -1, 1)
-                    i += reward
-                    self.add_replay(prev_states, action, reward, next_state, done, error=reward)
 
-                    frames += 1
-                    if frames % backup == 0 and backup > 0:
-                        self.save()
+                    R += reward
+                    self.add_replay(observation, action, reward, next_state, done, error=reward)
 
+                    observation = next_state
                     if done:
                         break
 
                 self.train()
 
-                if verbose:
-                    print("episode: {}/{} ({:3f}%), score: {}, no op: {}"
-                          ",  memory len: {}, epsilon: {:4f}".format(frames, episodes, 100 * (float(frames) / episodes),
-                                                                     i, no_op, len(self.memory),
-                                                                     self.pol.get_value()))
-
                 if visualize:
                     self.env.render()
 
-                if i >= cap > 0:
-                    done = True
+                # if i >= cap > 0:
+                #     done = True
 
                 if done:
-                    rewards = self.results.get('rewards', [])
-                    rewards.append(i)
-
-                    nop = self.results.get('no_op', [])
-                    nop.append(no_op)
-
-                    self.results.update({'last ep': frames, 'rewards': rewards, 'no_op': nop})
+                    self.update_results(r=R, noop=no_op, qvals=eps_q_vals, f=ep)
+                    if backup > 0 and ep % backup == 0:
+                        self.save()
+                    if verbose:
+                        print("episode: {}/{} ({}%), score: {} (last 100 games r average: {}), no op: {}"
+                              ",  memory len: {}, epsilon: {}".format(ep, episodes,
+                                                                      round(100 * (float(ep) / episodes), 4), R,
+                                                                      round(np.mean(self.results['rewards'][-100:]), 3),
+                                                                      no_op, len(self.memory),
+                                                                      round(self.pol.get_value(), 2)))
 
         self.env.close()
+
+        if backup > 0:
+            self.update_results(r=R, noop=no_op, qvals=eps_q_vals, f=ep)
+            self.save()
 
         return self.results.get('rewards', [])
 
@@ -296,7 +283,7 @@ class ImageAgent(AbstractAgent):
 
         super(ImageAgent, self).__init__(network=network, max_len_memory=max_len_memory, to_observe=to_observe,
                                          pol=pol, gamma=gamma, log_dir=log_dir, load_prev=load_prev,
-                                         game='BreakoutDeterministic-v4')
+                                         game='Breakout-Deterministic-v4')
 
     def pre_processing(self, s):
         processed_observe = np.uint8(
@@ -310,6 +297,7 @@ class ImageAgent(AbstractAgent):
         while frames < episodes:
 
             observation = self.env.reset()
+            observation = self.pre_processing(observation)
             done = False
             i = 0
             no_op = 0
@@ -317,14 +305,17 @@ class ImageAgent(AbstractAgent):
 
             for i in range(self.depth):
                 prev_states.append(np.zeros(self.state_size))
-            prev_states.appendleft(self.pre_processing(observation))
+            prev_states.appendleft(observation)
 
             while not done:
+
+                eps_q_vals = []
 
                 for _ in range(self.depth):
                     last = np.asarray(prev_states)
                     last = last[np.newaxis, :, :]
-                    action = self.act(last, no_op)
+                    action, q_vals = self.act(last, no_op)
+                    eps_q_vals.append((action, q_vals))
 
                     if action == 0:
                         no_op += 1
@@ -334,25 +325,21 @@ class ImageAgent(AbstractAgent):
                     prev_states.appendleft(next_state)
 
                     reward = np.clip(reward, -1, 1)
-                    i += reward
-                    self.add_replay(prev_states, action, reward, next_state, done, error=reward)
 
+                    i += reward
+                    self.add_replay(observation, action, reward, next_state, done, error=reward)
+
+                    observation = next_state
                     if done:
                         break
 
                 self.train()
 
-                frames += 1
-                if backup > 0 and frames % backup == 0 :
-                    rewards = self.results.get('rewards', [])
-                    rewards.append(i)
-
-                    nop = self.results.get('no_op', [])
-                    nop.append(no_op)
-
-                    self.results.update({'last ep': frames, 'rewards': rewards, 'no_op': nop})
-
+                if backup > 0 and frames % backup == 0:
+                    self.upadate_results(r=i, noop=no_op, qvals=eps_q_vals, f=frames)
                     self.save()
+
+                frames += 1
 
                 if visualize:
                     self.env.render()
@@ -361,27 +348,14 @@ class ImageAgent(AbstractAgent):
                     done = True
 
                 if done or frames == episodes-1:
-                    
+                    self.upadate_results(r=i, noop=no_op, qvals=eps_q_vals, f=frames)
                     if verbose == True:
-                        print("episode: {}/{} ({:3f}%), score: {}, no op: {}"
-                              ",  memory len: {}, epsilon: {:4f}".format(frames, episodes, 100 * (float(frames) / episodes),
-                                                                         i, no_op, len(self.memory),
-                                                                         self.pol.get_value()))
-                        
-                    rewards = self.results.get('rewards', [])
-                    rewards.append(i)
-
-                    nop = self.results.get('no_op', [])
-                    nop.append(no_op)
-
-                    self.results.update({'last ep': frames, 'rewards': rewards, 'no_op': nop})
-
-                    if verbose == -1:
-                        print("episode: {}/{} ({:3f}%), score: {}, no op: {}"
-                              ",  memory len: {}, epsilon: {:4f}".format(frames, episodes,
-                                                                         100 * (float(frames) / episodes),
-                                                                         i, no_op, len(self.memory),
-                                                                         self.pol.get_value()))
+                        print("episode: {}/{} ({}%), score: {} (last 100 games r average: {}), no op: {}"
+                              ",  memory len: {}, epsilon: {}".format(frames, episodes,
+                                                                      round(100 * (float(frames) / episodes), 4), i,
+                                                                      round(np.mean(self.results['rewards'][-100:]), 3),
+                                                                      no_op, len(self.memory),
+                                                                      round(self.pol.get_value(), 2)))
 
         self.env.close()
         if backup > 0:
