@@ -1,45 +1,46 @@
-from keras.layers import Dense, Flatten, merge, Merge, Lambda, RepeatVector, Add, Multiply, Flatten, Average, Subtract
+from keras.layers import Dense, Flatten, merge, Merge, Lambda, Add, Multiply, Flatten, Subtract
 from keras.layers.convolutional import Convolution2D, Conv2D
-from keras.models import Sequential, load_model, Model, Input, clone_model
-from keras.optimizers import Adam, RMSprop, SGD
-from keras.callbacks import ModelCheckpoint
+from keras.models import  load_model, Model, Input, clone_model
+from keras.optimizers import Adam
 import os
 from abc import ABC, abstractmethod
 from keras import backend as K
 import numpy as np
-from tensorflow import where
 
+def huber_loss(y_true, y_pred, clip_value=1.0):
+    # Huber loss, see https://en.wikipedia.org/wiki/Huber_loss and
+    # https://medium.com/@karpathy/yes-you-should-understand-backprop-e2f06eab496b
+    # for details.
+    assert clip_value > 0.
 
-def huber_loss(y_true, y_pred):
-    err = y_true - y_pred
+    x = y_true - y_pred
+    if np.isinf(clip_value):
+        return .5 * K.square(x)
 
-    cond = K.abs(err) < 1.0
-    L2 = 0.5 * K.square(err)
-    L1 = 1.0 * (K.abs(err) - 0.5 * 1.0)
-
-    loss = where(cond, L2, L1)
-    return K.mean(loss)
-
-
-# def huber_loss(a, b):
-#     error = a - b
-#     quadratic_term = error*error / 2
-#     linear_term = abs(error) - 1/2
-#     use_linear_term = (abs(error) > 1.0)
-#     use_linear_term = K.cast(use_linear_term, 'float32')
-#
-#     return K.mean(use_linear_term * linear_term + (1-use_linear_term) * quadratic_term)
-
+    condition = K.abs(x) < clip_value
+    squared_loss = .5 * K.square(x)
+    linear_loss = clip_value * (K.abs(x) - .5 * clip_value)
+    if K.backend() == 'tensorflow':
+        import tensorflow as tf
+        if hasattr(tf, 'select'):
+            return tf.select(condition, squared_loss, linear_loss)
+        else:
+            return tf.where(condition, squared_loss, linear_loss)
+    elif K.backend() == 'theano':
+        from theano import tensor as T
+        return T.switch(condition, squared_loss, linear_loss)
 
 class AbstractModel(ABC):
 
-    def __init__(self, state_size=None, action_size=None, lr=0.001, depth=1):
+    def __init__(self, state_size=None, action_size=None, lr=0.001, depth=1, normalization=False):
+
         self.model = None
         self._target_net = None
         self.state_size = state_size
         self.action_size = action_size
-        self.optim = RMSprop(lr=lr)
+        self.optim = Adam(lr=lr)
         self.depth = depth
+        self.normalization=normalization
 
     @abstractmethod
     def _model_creation(self, **kwargs):
@@ -66,6 +67,8 @@ class AbstractModel(ABC):
 
     def load(self, path):
         self. model = load_model(os.path.join(path, 'model.h5'), custom_objects={'huber_loss': huber_loss})
+        self.model.load_weights(os.path.join(path, 'model_weights.h5'))
+        # self.model.compile(self.optim, huber_loss)
 
     def on_fit_end(self):
         pass
@@ -109,8 +112,9 @@ class DoubleDQNWrapper(AbstractModel):
 
     def load(self, path):
         # self.model = load_model(os.path.join(path, 'model.h5'),  custom_objects={'hube_loss': huber_loss})
-        super().save(path)
-        self._target_net = load_model(os.path.join(path, 'target_model.h5'),  custom_objects={'huber_loss': huber_loss})
+        super().load(path)
+        # self._target_net = load_model(os.path.join(path, 'target_model.h5'),  custom_objects={'huber_loss': huber_loss})
+        self._target_net.load_weights(os.path.join(path, 'target_model_weights.h5'))
 
 
 class DenseDQN(AbstractModel):
@@ -128,15 +132,18 @@ class DenseDQN(AbstractModel):
         assert(self.state_size is not None and self.action_size is not None)
 
         in_layer = Input((self.depth, self.state_size, ))
-        reg = Lambda(lambda x: x / 255.0, output_shape=(self.depth, self.state_size, ))(in_layer)
+        reg = in_layer
+
+        if self.normalization:
+            reg = Lambda(lambda x: x / 255.0, output_shape=(self.depth, self.state_size, ))(in_layer)
 
         mask = Input((self.action_size, ))
 
         last_layer = Flatten(data_format='channels_first')(reg)
 
-        last_layer = Dense(layers_size[0], activation='relu')(last_layer)
+        last_layer = Dense(layers_size[0], activation='relu', kernel_initializer='glorot_normal')(last_layer)
         for i in layers_size[1:]:
-            last_layer = Dense(i, activation='relu')(last_layer)
+            last_layer = Dense(i, activation='relu', kernel_initializer='glorot_normal')(last_layer)
 
         # last_layer = Flatten(name='last_layer')(last_layer)
         last_layer = Dense(self.action_size)(last_layer)
@@ -146,7 +153,7 @@ class DenseDQN(AbstractModel):
         filtered_output = Multiply()([last_layer, mask])
 
         model = Model(inputs=[in_layer, mask], outputs=filtered_output)
-        model.compile(loss=huber_loss, optimizer=self.optim)
+        model.compile(loss='mse', optimizer=self.optim)
         return model
 
 
@@ -174,16 +181,17 @@ class DuelDenseDQN(AbstractModel):
         last_layer_val = Flatten()(in_layer)
 
         for i in layers_size:
-            last_layer_adv = Dense(i, activation='relu')(last_layer_adv)
+            last_layer_adv = Dense(i, activation='relu', kernel_initializer='glorot_normal')(last_layer_adv)
 
         for i in layers_size_val:
-            last_layer_val = Dense(i, activation='relu')(last_layer_val)
+            last_layer_val = Dense(i, activation='relu', kernel_initializer='glorot_normal')(last_layer_val)
 
-        advantage_layer = Dense(self.action_size, activation='linear')(last_layer_adv)
+        advantage_layer = Dense(self.action_size, activation='linear',
+                                kernel_initializer='glorot_normal')(last_layer_adv)
 
         # advantage_layer = Lambda(lambda x: x[:, 0, :], output_shape=(self.action_size, ))(Flatten()(advantage_layer))
 
-        value_layer = Dense(1, activation='linear')(last_layer_val)
+        value_layer = Dense(1, activation='linear', kernel_initializer='glorot_normal')(last_layer_val)
 
         # value_layer = Lambda(lambda x: x[:, 0, :], output_shape=(self.action_size, ))(value_layer)
 
@@ -206,8 +214,10 @@ class ConvDQM(AbstractModel):
         super(ConvDQM, self).__init__(state_size, action_size, depth=depth, lr=lr)
 
         self.learning_rate = lr
-        self._time = 0
         self.model = self._model_creation()
+        self.model._make_train_function()
+        self.model._make_predict_function()
+
         # self._target_net = self.model
 
     def _model_creation(self, **kwargs):
@@ -218,11 +228,11 @@ class ConvDQM(AbstractModel):
 
         normz = Lambda(lambda x: x / 255.0, output_shape=in_shape)(frames_input)
 
-        conv = Convolution2D(kernel_size=(8, 8), filters=32, strides=(4, 4), activation='relu',
-                             data_format='channels_first')(normz)
-        conv = Convolution2D(kernel_size=(4, 4), filters=64, strides=(2, 2), activation='relu',
-                             data_format='channels_first')(conv)
-        conv = Conv2D(64, (3, 3), strides=(1, 1), activation='relu')(conv)
+        conv = Conv2D(kernel_size=8, filters=16, strides=4, activation='relu',
+                      data_format='channels_first')(normz)
+        conv = Conv2D(kernel_size=4, filters=32, strides=2, activation='relu',
+                      data_format='channels_first')(conv)
+        # conv = Conv2D(filters=64, kernel_size=2, strides=2, activation='relu')(conv)
         flt = Flatten(data_format='channels_first')(conv)
 
         flt = Dense(256, activation='relu', name='last_layer')(flt)
@@ -258,7 +268,7 @@ class ConvDDQN(AbstractModel):
                              data_format='channels_first')(normz)
         conv = Convolution2D(kernel_size=(4, 4), filters=64, strides=(2, 2), activation='relu',
                              data_format='channels_first')(conv)
-        conv = Conv2D(64, (3, 3), strides=(1, 1), activation='relu')(conv)
+        conv = Conv2D(64, (2, 2), strides=(1, 1), activation='relu')(conv)
         flt = Flatten(data_format='channels_first')(conv)
 
         advantage_flt = Dense(256, activation='relu', )(flt)

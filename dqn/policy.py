@@ -55,6 +55,7 @@ class EpsPolicy(Policy):
             action = np.random.random_integers(0, nb_actions - 1)
         else:
             action = self.other_pol.select_action(q_values)
+
         return action
 
     def get_value(self):
@@ -63,17 +64,12 @@ class EpsPolicy(Policy):
 
 class AnnealedPolicy(Policy):
 
-    def __init__(self, inner_policy, attr, value_max, value_min, value_test, nb_steps, train=True,
-                 lower_prob_policy=None, to_max=False):
+    def __init__(self, inner_policy, attr, value_max, value_min, value_test, nb_steps, train=True, to_max=False):
 
         assert (hasattr(inner_policy, attr))
 
         super(AnnealedPolicy, self).__init__('annealedPolicy')
 
-        if lower_prob_policy is None:
-            lower_prob_policy = GreedyPolicy()
-
-        self.lower_prob_policy = lower_prob_policy
         self.inner_policy = inner_policy
         self.attr = attr
         self.value_max = value_max

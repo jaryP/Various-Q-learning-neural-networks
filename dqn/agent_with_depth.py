@@ -296,7 +296,7 @@ class ImageAgent(AbstractAgent):
 
         super(ImageAgent, self).__init__(network=network, max_len_memory=max_len_memory, to_observe=to_observe,
                                          pol=pol, gamma=gamma, log_dir=log_dir, load_prev=load_prev,
-                                         game='BreakoutDeterministic-v4')
+                                         game='PongDeterministic-v4')
 
     def pre_processing(self, s):
         processed_observe = np.uint8(
@@ -317,11 +317,11 @@ class ImageAgent(AbstractAgent):
 
             for i in range(self.depth):
                 prev_states.append(np.zeros(self.state_size))
-            prev_states.appendleft(self.pre_processing(observation))
 
             while not done:
 
                 for _ in range(self.depth):
+                    prev_states.appendleft(self.pre_processing(observation))
                     last = np.asarray(prev_states)
                     last = last[np.newaxis, :, :]
                     action = self.act(last, no_op)
@@ -331,11 +331,12 @@ class ImageAgent(AbstractAgent):
 
                     next_state, reward, done, _ = self.env. step(action)
                     next_state = self.pre_processing(next_state)
-                    prev_states.appendleft(next_state)
+                    # prev_states.appendleft(next_state)
 
                     reward = np.clip(reward, -1, 1)
                     i += reward
                     self.add_replay(prev_states, action, reward, next_state, done, error=reward)
+                    observation = next_state
 
                     if done:
                         break
@@ -361,13 +362,13 @@ class ImageAgent(AbstractAgent):
                     done = True
 
                 if done or frames == episodes-1:
-                    
+
                     if verbose == True:
                         print("episode: {}/{} ({:3f}%), score: {}, no op: {}"
                               ",  memory len: {}, epsilon: {:4f}".format(frames, episodes, 100 * (float(frames) / episodes),
                                                                          i, no_op, len(self.memory),
                                                                          self.pol.get_value()))
-                        
+
                     rewards = self.results.get('rewards', [])
                     rewards.append(i)
 

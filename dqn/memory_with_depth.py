@@ -5,11 +5,14 @@ from dqn.tree import SumTree
 
 
 class Buffer(ABC):
-    def __init__(self, maxlen):
+    def __init__(self, maxlen, maxsave=None):
         self.data = [None] * (maxlen + 1)
         self.start = 0
         self.maxlen = maxlen
         self.length = 0
+        if maxsave is None:
+            maxsave = maxlen+1
+        self.maxsave = maxsave
 
     def __len__(self):
         return self.length
@@ -48,67 +51,6 @@ class Buffer(ABC):
         self.length = len([i for i in self.data if i is not None])
 
 
-class BinaryHeatTree:
-    def __init__(self, max_len):
-        pass
-        self.last_val = 0
-        self.max_len = max_len
-        self.tree = np.zeros(2 * max_len - 1)
-        self.indexes = np.zeros(max_len, dtype=object)
-
-    def root(self):
-        return self.tree[0]
-
-    def add_new_node(self, p, ix):
-
-        leaf = self.last_val + self.max_len - 1
-        self.indexes[self.last_val] = ix
-        self.update(leaf, p)
-        self.last_val += 1
-        if self.last_val >= self.max_len:
-            self.last_val = 0
-
-    def update(self, i, p):
-
-        delta = p - self.tree[i]
-        self.tree[i] = p
-        self._propagate_error(i, delta)
-
-    def _propagate_error(self, i, delta):
-
-        parent = (i - 1) // 2
-        self.tree[parent] += delta
-        if parent != 0:
-            # aggiorna ricorsivamente se non è la radice dell'albero
-            self._propagate_error(parent, delta)
-
-    def get_leaf(self, p):
-
-        leaf_idx = self._walk(p)
-        data_idx = leaf_idx - self.max_len + 1
-        return [leaf_idx, self.tree[leaf_idx], self.indexes[data_idx]]
-
-    def _walk(self, prob, i=0):
-
-        left = 2 * i + 1
-        right = left + 1
-
-        if self.tree[left] == 0:
-            return i
-        if left >= self.last_val:  # end search when no more child
-            return i
-
-        # if self.tree[left_i] == 0 and self.tree[right_i] == 0:
-
-        if self.tree[left] == self.tree[right]:
-            # i valori sono uguali quindi ne prendo uno a caso
-            return self._walk(prob, np.random.choice([left, right]))
-        if prob <= self.tree[left]:
-            return self._walk(prob, left)
-        else:
-            return self._walk(prob - self.tree[left], right)
-
-
 class SimpleMemory(Buffer):
     def __init__(self, max_len):
         super(SimpleMemory, self).__init__(max_len)
@@ -117,38 +59,44 @@ class SimpleMemory(Buffer):
 
         size = kwargs['size']
         depth = kwargs.get('depth', 4)
+        shape = kwargs.get('shape', (84, 84))
 
         assert (len(self) > 0)
         if size > self.maxlen:
             size = self.maxlen
 
         idx = np.random.choice(np.arange(len(self)), size, replace=False)
-        _states = []
-        _actions = []
-        _rewards = []
-        _next_states = []
-        _is_done = []
 
-        for i in idx:
-            s = self.data[i][0].copy()
-            _states.append(np.asarray(s))
-            _actions.append(self.data[i][1])
-            _rewards.append(self.data[i][2])
-            s.appendleft(self.data[i][3])
-            _next_states.append(np.asarray(s))
-            _is_done.append(self.data[i][4])
+        _states = np.zeros((size, depth, shape[0], shape[1]), dtype=np.uint8)
+        _next_states = np.zeros((size, depth, shape[0], shape[1]), dtype=np.uint8)
 
-        return np.asarray(_states), np.asarray(_actions), np.asarray(_rewards), np.asarray(_next_states), \
-               np.asarray(_is_done)
+        _actions = np.zeros(size, dtype=np.uint8)
+        _rewards = np.zeros(size)
+        _is_done = np.zeros(size, dtype=bool)
+
+        for b, i in enumerate(idx):
+            d = self.data[i]
+
+            stack = np.asarray(d[0])
+            nstack = np.asarray(d[3])
+
+            _states[b] = stack
+            _next_states[b] = nstack
+            _actions[b] = d[1]
+            _rewards[b] = d[2]
+            _is_done[b] = d[4]
+
+        return _states, _actions, _rewards, _next_states, _is_done
 
 
 class PrioritizedMemory:
 
-    def __init__(self, max_len, alpha=0.6, eps=0.001):
+    def __init__(self, max_len, alpha=0.6, eps=0.001, beta=0.4):
         self.tree = SumTree(max_len)
         self.alpha = alpha
         self.eps = eps
         self.maxlen = max_len
+        self.beta = beta
 
     def update_tree(self, idx, error):
         error = (np.clip(error, 0.0, None) + self.eps)**self.alpha
@@ -165,40 +113,44 @@ class PrioritizedMemory:
     def random_sample(self, **kwargs):
         size = kwargs['size']
         depth = kwargs.get('depth', 4)
+        shape = kwargs.get('shape', (84, 84))
 
         assert (len(self) > 0)
         if size > len(self):
             size = len(self)
 
         indexes = []
-
         segment = self.tree.total() / size
 
-        data_shape = self.tree.data[0][3].shape
+        _states = np.zeros((size, depth, shape[0], shape[1]), dtype=np.uint8)
+        _next_states = np.zeros((size, depth, shape[0], shape[1]), dtype=np.uint8)
+        _weights = np.zeros(size)
 
-        _states = np.empty((size, depth, data_shape[0], data_shape[1]), dtype=np.uint8)
-        _actions = []
-        _rewards = np.empty(size)
-        _next_states = np.empty((size, depth, data_shape[0], data_shape[1]), dtype=np.uint8)
-        _is_done = []
+        _actions = np.zeros(size, dtype=np.uint8)
+        _rewards = np.zeros(size)
+        _is_done = np.zeros(size, dtype=bool)
+
+        st = [t for t in self.tree.tree if t != 0]
+        min_prob = np.min(st) / self.tree.total()
+
         for i in range(size):
             a = segment * i
             b = segment * (i + 1)
             lower_bound = np.random.uniform(a, b)
-            idx, p, data = self.tree.get(lower_bound)
+            idx, p, d = self.tree.get(lower_bound)
             indexes.append(idx)
 
-            s = data[0].copy()
-            _states[i] = np.asarray(s)
-            _actions.append(data[1])
-            _rewards[i] = data[2]
+            prob = p/self.tree.total()
 
-            s.appendleft(data[3])
-            _next_states[i] = np.asarray(s)
-            del s
-            _is_done.append(data[4])
+            _weights[i] = np.power(prob / min_prob, -self.beta)
 
-        return np.asarray(_states), _actions, _rewards, np.asarray(_next_states), np.asarray(_is_done), indexes
+            _states[i] = np.asarray(d[0])
+            _next_states[i] = np.asarray(d[3])
+            _actions[i] = d[1]
+            _rewards[i] = d[2]
+            _is_done[i] = d[4]
+        _weights *= (1/np.max(_weights))
+        return _states, _actions, _rewards, _next_states, _is_done, indexes, _weights
 
     def save(self, path):
         self.tree.save(path)

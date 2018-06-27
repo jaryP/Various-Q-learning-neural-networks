@@ -11,9 +11,9 @@ class Buffer(ABC):
         self.start = 0
         self.maxlen = maxlen
         self.length = 0
-        # if max_save is None:
-        #     max_save = maxlen+1
-        # self.max_save = max_save
+        if max_save is None:
+            max_save = maxlen+1
+        self.max_save = max_save
 
     def __len__(self):
         return self.length
@@ -42,20 +42,20 @@ class Buffer(ABC):
         self.data[(self.start + self.length - 1) % self.maxlen] = v
 
     def save(self, path):
-        # if len(self) >= self.max_save:
-        #     d = {
-        #         'data': self.data[-self.max_save:],
-        #         'start': self.max_save,
-        #         'maxlen': self.maxlen,
-        #         'length': self.max_save
-        #     }
-        # else:
-        d = {
-            'data': self.data,
-            'start': self.start,
-            'maxlen': self.maxlen,
-            'length': self.length
-        }
+        if len(self) >= self.max_save:
+            d = {
+                'data': self.data[-self.max_save:],
+                'start': self.max_save,
+                'maxlen': self.maxlen,
+                'length': self.max_save
+            }
+        else:
+            d = {
+                'data': self.data,
+                'start': self.start,
+                'maxlen': self.maxlen,
+                'length': self.length
+            }
         with open(os.path.join(path, 'memory.mem'), 'wb') as f:
             pickle.dump(d, f, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -71,66 +71,6 @@ class Buffer(ABC):
         self.data = [None] * (self.maxlen + 1)
         for i, v in enumerate(d['data']):
             self.data[i] = v
-
-class BinaryHeatTree:
-    def __init__(self, max_len):
-        pass
-        self.last_val = 0
-        self.max_len = max_len
-        self.tree = np.zeros(2 * max_len - 1)
-        self.indexes = np.zeros(max_len, dtype=object)
-
-    def root(self):
-        return self.tree[0]
-
-    def add_new_node(self, p, ix):
-
-        leaf = self.last_val + self.max_len - 1
-        self.indexes[self.last_val] = ix
-        self.update(leaf, p)
-        self.last_val += 1
-        if self.last_val >= self.max_len:
-            self.last_val = 0
-
-    def update(self, i, p):
-
-        delta = p - self.tree[i]
-        self.tree[i] = p
-        self._propagate_error(i, delta)
-
-    def _propagate_error(self, i, delta):
-
-        parent = (i - 1) // 2
-        self.tree[parent] += delta
-        if parent != 0:
-            # aggiorna ricorsivamente se non è la radice dell'albero
-            self._propagate_error(parent, delta)
-
-    def get_leaf(self, p):
-
-        leaf_idx = self._walk(p)
-        data_idx = leaf_idx - self.max_len + 1
-        return [leaf_idx, self.tree[leaf_idx], self.indexes[data_idx]]
-
-    def _walk(self, prob, i=0):
-
-        left = 2 * i + 1
-        right = left + 1
-
-        if self.tree[left] == 0:
-            return i
-        if left >= self.last_val:  # end search when no more child
-            return i
-
-        # if self.tree[left_i] == 0 and self.tree[right_i] == 0:
-
-        if self.tree[left] == self.tree[right]:
-            # i valori sono uguali quindi ne prendo uno a caso
-            return self._walk(prob, np.random.choice([left, right]))
-        if prob <= self.tree[left]:
-            return self._walk(prob, left)
-        else:
-            return self._walk(prob - self.tree[left], right)
 
 
 class SimpleMemory(Buffer):
@@ -162,7 +102,7 @@ class SimpleMemory(Buffer):
 
         for b, i in enumerate(idx):
             _states[b, 0] = self.data[i][3]
-            _states[b, 1] = self.data[i][0]
+            _states[b, 1] = list(self.data[i][0])[0]
             for j in range(1, depth):
                 off = i - j
                 if off > 0:
@@ -179,6 +119,7 @@ class SimpleMemory(Buffer):
     #
     # def load(self, path):
     #     super().load(path)
+
 
 class PrioritizedMemory:
 
@@ -214,7 +155,13 @@ class PrioritizedMemory:
 
         data_shape = self.tree.data[0][3].shape
 
-        _states = np.zeros((size, depth+1, data_shape[0], data_shape[1]), dtype=np.uint8)
+        image = False
+        if len(data_shape) == 1:
+            _states = np.zeros((size, depth+1, data_shape[0]))
+        else:
+            _states = np.zeros((size, depth+1, data_shape[0], data_shape[1]), dtype=np.uint8)
+            image = True
+
         _actions = []
         _rewards = np.empty(size)
         # _next_states = np.zeros((size, depth, data_shape[0], data_shape[1]), dtype=np.uint8)
@@ -238,8 +185,11 @@ class PrioritizedMemory:
             _actions.append(data[1])
             _is_done.append(data[4])
 
+        if image:
+            return _states[:, 1:, :, :], _actions, _rewards, _states[:, :-1, :, :], np.asarray(_is_done)
+        else:
+            return _states[:, 1:, :], _actions, _rewards, _states[:, :-1, :], np.asarray(_is_done)
 
-        return _states[:, 1:, :, :], _actions, _rewards, _states[:, :-1, :, :], np.asarray(_is_done), indexes
 
     def save(self, path):
         self.tree.save(path)
