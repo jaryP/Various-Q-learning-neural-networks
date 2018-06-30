@@ -21,7 +21,10 @@ from keras import backend as K
 import numpy as np
 
 
-def huber_loss(y_true, y_pred, weights, clip_value=1.0):
+def huber_loss(y_true, y_pred,  clip_value=1.0):
+
+    weights = K.expand_dims(y_true[:, 0])
+    y_true = y_true[:, 1:]
 
     x = y_true - y_pred
     if np.isinf(clip_value):
@@ -62,15 +65,15 @@ class Agent:
         self.memory = PrioritizedMemory(max_len=config.get('mem_size', 100000))
 
         if config.get('duel', False):
-            self.model, self.test_model = self._duel_conv()
+            self.model = self._duel_conv()
         else:
-            self.model, self.test_model = self._conv()
+            self.model = self._conv()
 
-        self.model.compile(Adam(lr=config.get('lr', 1e-4)), loss=None)
+        self.model.compile(Adam(lr=config.get('lr', 1e-4)), loss=huber_loss)
 
         if config.get('target', True):
-            self._target_model = clone_model(self.test_model)
-            self._target_model.set_weights(self.test_model.get_weights())
+            self._target_model = clone_model(self.model)
+            self._target_model.set_weights(self.model.get_weights())
             self._time = 0
             self.update_time = config.get('target_update', 1000)
 
@@ -136,8 +139,10 @@ class Agent:
 
         targets = mask * targets[:, np.newaxis]
         targets[done, actions[done]] = rewards[done]
+        # targets = np.vstack([weights, targets])
+        targets = np.c_[weights, targets]
 
-        h = self.fit([states, mask, targets, weights], targets, batch=8, epochs=1, verbose=0)
+        h = self.fit([states, mask], targets, batch=8, epochs=1, verbose=0)
 
         errors = targets - target
         errors = np.abs(errors[np.arange(batch_size), actions])
@@ -224,7 +229,7 @@ class Agent:
 
     def act(self, s):
         s = [s, np.ones((1, self.action_size))]
-        act_values = self.test_model.predict(s)[0]
+        act_values = self.model.predict(s)[0]
         action = self.pol.select_action(q_values=act_values)
         return action, [float(q) for q in act_values]
 
@@ -233,22 +238,22 @@ class Agent:
     ##################################################
 
     def predict(self, x, x_t=None, batch=None, verbose=0):
-        online = self.test_model.predict(x, batch_size=batch, verbose=verbose)
+        online = self.model.predict(x, batch_size=batch, verbose=verbose)
 
         if x_t is None:
             return online
         elif self._target_model is None:
-            target = self.test_model.predict(x, batch_size=batch, verbose=verbose)
+            target = self.model.predict(x, batch_size=batch, verbose=verbose)
         else:
             target = self._target_model.predict(x_t, batch_size=batch, verbose=verbose)
         return online, target
 
     def fit(self, x, y, batch=None, epochs=1, verbose=0):
-        h = self.model.fit(x, batch_size=batch, epochs=epochs, verbose=verbose)
+        h = self.model.fit(x, y, batch_size=batch, epochs=epochs, verbose=verbose)
         if self._target_model is not None:
             self._time += 1
             if self._time >= self.update_time:
-                self._target_model.set_weights(self.test_model.get_weights())
+                self._target_model.set_weights(self.model.get_weights())
                 self._time = 0
         return h
 
@@ -257,9 +262,6 @@ class Agent:
 
         frames_input = Input(shape=in_shape, name='frames')
         mask = Input(shape=(self.action_size,), name='mask')
-
-        y_true = Input(shape=(self.action_size, ))
-        weights = Input(shape=(1, ))
 
         normz = Lambda(lambda x: x / 255.0, output_shape=in_shape)(frames_input)
 
@@ -274,20 +276,14 @@ class Agent:
 
         flt = Multiply()([flt, mask])
 
-        model = Model(input=[frames_input, mask, y_true, weights], output=flt)
-        model.add_loss(huber_loss(y_true, flt, weights))
-        test_model = Model(input=[frames_input, mask], output=flt)
-
-        return model, test_model
+        model = Model(input=[frames_input, mask], output=flt)
+        return model
 
     def _duel_conv(self):
         in_shape = (self.depth, self.state_size[0], self.state_size[1],)
 
         frames_input = Input(shape=in_shape, name='frames')
         mask = Input(shape=(self.action_size,), name='mask')
-
-        y_true = Input(shape=(self.action_size, ))
-        weights = Input(shape=(1, ))
 
         normz = Lambda(lambda x: x / 255.0, output_shape=in_shape)(frames_input)
 
@@ -314,11 +310,8 @@ class Agent:
 
         flt = Multiply()([out, mask])
 
-        model = Model(input=[frames_input, mask, y_true, weights], output=flt)
-        model.add_loss(huber_loss(y_true, flt, weights))
-        test_model = Model(input=[frames_input, mask], output=flt)
-
-        return model, test_model
+        model = Model(input=[frames_input, mask], output=flt)
+        return model
 
     ##################################################
     # UTILS
@@ -353,6 +346,7 @@ class Agent:
         plt.legend()
         plt.show()
         print()
+
 
     def play(self):
 
@@ -458,8 +452,8 @@ class Agent:
             self._target_model.save_weights(os.path.join(path, 'target_model_weights.h5'))
 
     def load_models(self, path):
-        self.model.load_weights(os.path.join(path, 'model_weights.h5'))
         self.model = load_model(os.path.join(path, 'model.h5'), custom_objects={'huber_loss': huber_loss})
+        self.model.load_weights(os.path.join(path, 'model_weights.h5'))
         if self._target_model is not None:
             self._target_model.load_weights(os.path.join(path, 'target_model_weights.h5'))
 
@@ -469,9 +463,9 @@ if __name__ == '__main__':
     conf = {
         'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/prior_DDQN',
         'visualize': True,
-        'load': True,
+        'load': False,
         'episodes': 300,
-        # 'to_observe': 100,
+        'to_observe': 100,
         # 'target': True
 
     }

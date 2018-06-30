@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 from abc import ABC, abstractmethod
 from dqn.tree import SumTree
+from policy import EpsPolicy, AnnealedPolicy
 
 
 class Buffer(ABC):
@@ -96,15 +97,17 @@ class PrioritizedMemory:
         self.alpha = alpha
         self.eps = eps
         self.maxlen = max_len
-        self.beta = beta
+        self.beta = 0.6
+        # self.ann = AnnealedPolicy(inner_policy=EpsPolicy(self.beta), attr='eps', value_max=1.0, value_min=0.6,
+        #                           value_test=0.5, nb_steps=5000, to_max=True)
 
     def update_tree(self, idx, error):
-        error = (np.clip(error, 0.0, None) + self.eps)**self.alpha
+        error = (np.clip(error, 0.0, None) + self.eps) ** self.beta
         self.tree.update(idx, error)
 
     def append(self, v, **kwargs):
         error = kwargs['error']
-        error = (np.clip(error, 0, None) + self.eps) ** self.alpha
+        error = (np.clip(error, 0, None) + self.eps) ** self.beta
         self.tree.add(error, v)
 
     def __len__(self):
@@ -114,6 +117,7 @@ class PrioritizedMemory:
         size = kwargs['size']
         depth = kwargs.get('depth', 4)
         shape = kwargs.get('shape', (84, 84))
+        # self.beta = self.ann.linear_step()
 
         assert (len(self) > 0)
         if size > len(self):
@@ -142,15 +146,15 @@ class PrioritizedMemory:
 
             prob = p/self.tree.total()
 
-            _weights[i] = np.power(prob / min_prob, -self.beta)
-
+            # _weights[i] = np.power(prob / min_prob, -self.beta)
+            _weights[i] = np.power(p*len(st), -self.beta)
             _states[i] = np.asarray(d[0])
             _next_states[i] = np.asarray(d[3])
             _actions[i] = d[1]
             _rewards[i] = d[2]
             _is_done[i] = d[4]
         _weights *= (1/np.max(_weights))
-        return _states, _actions, _rewards, _next_states, _is_done, indexes, _weights
+        return _states, _actions, _rewards, _next_states, _is_done, indexes, np.ones(size)
 
     def save(self, path):
         self.tree.save(path)
@@ -160,5 +164,3 @@ class PrioritizedMemory:
         # with open(path, "rb") as file:
         #     self.tree = pickle.load(file)
         # self.maxlen = len(self)
-
-

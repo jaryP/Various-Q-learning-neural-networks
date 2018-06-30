@@ -2,25 +2,52 @@ import tqdm
 import numpy as np
 np.random.seed(19)
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
 os.environ['KERAS_BACKEND'] = 'tensorflow'
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-from dqn.memory_with_depth import SimpleMemory
+import tensorflow as tf
+from dqn.memory_with_depth import SimpleMemory, PrioritizedMemory
 import gym
 import policy
 import traceback
 import pickle
+from keras.engine.topology import Layer
 import time
 import matplotlib.pyplot as plt
 from dqn.wrappers import wrap_dqn
-from keras.layers import Dense, Lambda, Add, Multiply, Flatten, Subtract
-from keras.layers.convolutional import  Conv2D
+from keras.layers import Dense, Lambda, Multiply, Flatten
+from keras.layers.convolutional import Conv2D
 from keras.models import load_model, Model, Input, clone_model
 from keras.optimizers import Adam
 from keras import backend as K
 import numpy as np
 import time
+from keras.utils import plot_model
 
+
+class HeadSum(Layer):
+
+    def __init__(self, action_size, **kwargs):
+        self.action_size = action_size
+        super(HeadSum, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        super(HeadSum, self).build(input_shape)
+
+    def call(self, x):
+        y = x[1]
+        x = x[0]
+        x -= K.mean(x, axis=1, keepdims=True)
+        y = K.repeat_elements(y, self.action_size, axis=1)
+        return x + y
+
+    def compute_output_shape(self, input_shape):
+        return (self.action_size,)
+
+    def get_config(self):
+        config = {'action_size': self.action_size}
+        base_config = super(HeadSum, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 def huber_loss(y_true, y_pred, clip_value=1.0):
 
@@ -31,7 +58,6 @@ def huber_loss(y_true, y_pred, clip_value=1.0):
     condition = K.abs(x) < clip_value
     squared_loss = .5 * K.square(x)
     linear_loss = clip_value * (K.abs(x) - .5 * clip_value)
-    import tensorflow as tf
     if hasattr(tf, 'select'):
         ret = tf.select(condition, squared_loss, linear_loss)
     else:
@@ -59,7 +85,11 @@ class Agent:
         self._target_model = None
 
         self.prioritized = config.get(('prioritized', False))
-        self.memory = SimpleMemory(max_len=config.get('mem_size', 100000))
+
+        if self.prioritized:
+            self.memory = PrioritizedMemory(max_len=config.get('mem_size', 100000))
+        else:
+            self.memory = SimpleMemory(max_len=config.get('mem_size', 100000))
 
         if config.get('duel', False):
             self.model = self._duel_conv()
@@ -77,16 +107,16 @@ class Agent:
         self.env._max_episode_steps = None
         self.batch_size = config.get('batch', 32*3)
         self.to_observe = config.get('to_observe', 10000)
-        self.log_dir = config['log_dir']
 
+        self.log_dir = config['log_dir']
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
+        plot_model(self.model, to_file=os.path.join(self.log_dir, 'model.png'), show_shapes=True)
 
         attr = {'batch size': self.batch_size, 'to observe': self.to_observe,
                 'depth': self.depth}
 
         self.results = {'info': attr}
-
 
         load_prev = config.get('load', False)
 
@@ -140,15 +170,14 @@ class Agent:
         targets = mask * targets[:, np.newaxis]
         targets[done, actions[done]] = rewards[done]
 
-        h = self.fit([states, mask], targets, batch=8, epochs=1, verbose=0)
-
-        if len(ret) == 6:
-
-            errors = target_val - targets
+        if self.prioritized:
+            indexes = ret[-1]
+            errors = targets - target
             errors = np.abs(errors[np.arange(batch_size), actions])
-            idx = ret[-1]
-            for i in range(len(idx)):
-                self.memory.update_tree(idx[i], errors[i])
+            for i in range(len(indexes)):
+                self.memory.update_tree(indexes[i], errors[i])
+
+        h = self.fit([states, mask], targets, batch=8, epochs=1, verbose=0)
 
         return h
 
@@ -242,7 +271,7 @@ class Agent:
         frames_input = Input(shape=in_shape, name='frames')
         mask = Input(shape=(self.action_size,), name='mask')
 
-        normz = Lambda(lambda x: x / 255.0, output_shape=in_shape)(frames_input)
+        normz = Lambda(lambda x: x / 255.0, output_shape=in_shape, name='normalization')(frames_input)
 
         conv = Conv2D(kernel_size=8, filters=16, strides=4, activation='relu',
                       data_format='channels_first')(normz)
@@ -253,18 +282,19 @@ class Agent:
         flt = Dense(256, activation='relu', name='last_layer')(flt)
         flt = Dense(self.action_size)(flt)
 
-        flt = Multiply()([flt, mask])
+        flt = Multiply(name='output')([flt, mask])
 
         model = Model(input=[frames_input, mask], output=flt)
         return model
 
     def _duel_conv(self):
+
         in_shape = (self.depth, self.state_size[0], self.state_size[1],)
 
         frames_input = Input(shape=in_shape, name='frames')
         mask = Input(shape=(self.action_size,), name='mask')
 
-        normz = Lambda(lambda x: x / 255.0, output_shape=in_shape)(frames_input)
+        normz = Lambda(lambda x: x / 255.0, output_shape=in_shape, name='normalization')(frames_input)
 
         conv = Conv2D(kernel_size=8, filters=16, strides=4, activation='relu',
                       data_format='channels_first')(normz)
@@ -272,22 +302,13 @@ class Agent:
                       data_format='channels_first')(conv)
         flt = Flatten(data_format='channels_first')(conv)
 
-        advantage_flt = Dense(256, activation='relu', name='last_layer')(flt)
+        advantage = Dense(self.action_size, name='advantage_layer')(Dense(256, activation='relu')(flt))
 
-        flt = Dense(self.action_size)(flt)
-        advantage = Dense(self.action_size, name='advantege_layer')(advantage_flt)
+        value = Dense(1, name='value_layer')(Dense(256, activation='relu')(flt))
 
-        advantage_sub = Lambda(function=lambda x: K.mean(x, axis=1, keepdims=True))(advantage)
-        advantage = Subtract()([advantage, advantage_sub])
+        out = HeadSum(action_size=self.action_size)([advantage, value])
 
-        value_flt = Dense(128, activation='relu', )(flt)
-        value = Dense(1, name='value_layer')(value_flt)
-
-        value = Lambda(function=lambda x: K.repeat_elements(x, self.action_size, axis=1))(value)
-
-        out = Add()([advantage, value])
-
-        flt = Multiply()([out, mask])
+        flt = Multiply(name='output')([out, mask])
 
         model = Model(input=[frames_input, mask], output=flt)
         return model
@@ -300,10 +321,9 @@ class Agent:
         rewards = self.results.get('rewards', [])
         qs = self.results.get('q_values', [])
 
+        q_values = np.asarray([q[0][1] for q in qs])
         rewards_mean = [np.mean(rewards[max(0, i-50):i]) for i in range(1, len(rewards)+1)]
         rewards_mean_100 = [np.mean(rewards[max(0, i-100):i]) for i in range(1, len(rewards)+1)]
-
-        q_values = np.asarray([q[0][1] for q in qs])
 
         actions = {}
         for i, action in enumerate(self.env.unwrapped.get_action_meanings()):
@@ -313,58 +333,82 @@ class Agent:
 
         eps = range(len(rewards))
 
+        plt.plot(eps, [0]*len(eps))
+        plt.plot(eps, [15] * len(eps), 'k')
+        plt.plot(eps, [10] * len(eps), 'k')
+        plt.plot(eps, [5] * len(eps), 'k')
+        plt.plot(eps, [-5] * len(eps), 'k')
+        plt.plot(eps, [-10] * len(eps), 'k')
+        plt.plot(eps, [-15] * len(eps), 'k')
+
         plt.plot(eps, rewards, label='reward')
         plt.plot(eps, rewards_mean, label='mean reward in last 50 games')
         plt.plot(eps, rewards_mean_100, label='mean reward in last 100 games')
+        plt.margins(x=0)
+        plt.margins(y=0)
 
-        plt.plot(eps, [0]*len(eps))
         plt.legend()
         plt.xlabel('episodes')
         plt.ylabel('reward')
         plt.show()
 
-        # for a, v in actions.items():
-        #     plt.plot(eps, v, label=a)
+        plt.plot(eps, [0]*len(eps), 'k')
+        plt.margins(x=0)
+        plt.margins(y=0)
+
         plt.plot(eps, np.max(q_values, axis=1), label='Q values')
-        plt.plot(eps, [0]*len(eps))
         plt.xlabel('episodes')
         plt.ylabel('q value')
         plt.legend()
         plt.show()
-        print()
+
+        observation = self.env.reset()
+        done = False
+
+        q_values =[] # np.asarray([q[0][1] for q in qs])
+
+        while not done:
+            action, q_vals = self.act(np.asarray(observation)[np.newaxis])
+            q_values.append(q_vals)
+            next_state, reward, done, _ = self.env.step(action)
+
+            observation = next_state
+
+            # self.env.render()
+
+        q_values = np.asarray(q_values)
+
+        for i, action in enumerate(self.env.unwrapped.get_action_meanings()):
+            # if action not in ['NOOP', 'LEFT', 'RIGHT']:
+            #     continue
+            plt.plot(range(len(q_values)), q_values[:, i], label=action)
+
+        plt.xlabel('episodes')
+        plt.ylabel('q value')
+        plt.legend()
+        plt.show()
+
 
     def play(self):
 
-        from sklearn.manifold import TSNE
-        tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=500)
-
-        done = False
-        m = clone_model(self.model)
-        m.layers.pop()
-        m.layers.pop()
-        m.layers.pop()
-        m.summary()
-        r = 0
         from gym.wrappers.monitoring.video_recorder import VideoRecorder
         rec = VideoRecorder(self.env, base_path=os.path.join(self.log_dir, self.log_dir.rsplit('/', 1)[1]))
 
-        for i in range(5):
-            observation = self.env.reset()
-            r = 0
-            done = False
-            while not done:
-                action, q_vals = self.act(np.asarray(observation)[np.newaxis])
+        observation = self.env.reset()
+        r = 0
+        done = False
+        while not done:
+            action, q_vals = self.act(np.asarray(observation)[np.newaxis])
 
-                next_state, reward, done, _ = self.env.step(action)
+            next_state, reward, done, _ = self.env.step(action)
 
-                r += reward
+            r += reward
 
-                observation = next_state
+            observation = next_state
 
-                self.env.render()
-                rec.capture_frame()
-                time.sleep(0.05)
-            print(r)
+            self.env.render()
+            rec.capture_frame()
+            time.sleep(0.05)
 
         print('Game ended with score: ', r)
         self.env.close()
@@ -386,7 +430,7 @@ class Agent:
                 pickle.dump(self.memory, f, protocol=pickle.HIGHEST_PROTOCOL)
 
             # self.memory.save(pt)
-            self.savel_models(pt)
+            self.save_models(pt)
 
             print('Last calculated reward: {} at episode: {} with mean in last 50 episodes: {:3f} eps: {:3f} and memory size: {}'.format(
                 self.results['rewards'][-1],
@@ -443,41 +487,72 @@ class Agent:
 
         self.results.update({'last ep': e, 'rewards': rewards, 'q_values': qs, 'frames': fs})
 
-    def savel_models(self, path):
+    def save_models(self, path):
         self.model.save(os.path.join(path, 'model.h5'))
         self.model.save_weights(os.path.join(path, 'model_weights.h5'))
         # self._target_net.save(os.path.join(path, 'target_model.h5'))
         if self._target_model is not None:
+            self._target_model.save(os.path.join(path, 'target_model.h5'))
             self._target_model.save_weights(os.path.join(path, 'target_model_weights.h5'))
 
     def load_models(self, path):
+        self.model = load_model(os.path.join(path, 'model.h5'), custom_objects={'huber_loss': huber_loss,
+                                                                                'HeadSum': HeadSum(self.action_size)})
         self.model.load_weights(os.path.join(path, 'model_weights.h5'))
-        self.model = load_model(os.path.join(path, 'model.h5'), custom_objects={'huber_loss': huber_loss})
         if self._target_model is not None:
             self._target_model.load_weights(os.path.join(path, 'target_model_weights.h5'))
 
 
 if __name__ == '__main__':
 
-    conf = {
-        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/DDQN',
-        'visualize': True,
-        'load': True,
-        'episodes': 300,
-    }
-
-    a = Agent(conf)
-    a.plot()
-    # a.learn()
-    #
     # conf = {
-    #     'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/duel_DDQN',
-    #     'visualize': False,
+    #     'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/DDQN',
+    #     'visualize': True,
     #     'load': True,
     #     'episodes': 300,
     # }
     #
     # a = Agent(conf)
+    # a.plot()
+    # exit()
     # a.learn()
+    #
 
+    conf = {
+        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/target_duel_DDQN',
+        'visualize': True,
+        'load': True,
+        'episodes': 300,
+        'duel': True,
+        'backup': 25,
+        'target': True
+    }
+
+    a = Agent(conf)
+    a.learn()
+    # exit()
+    import dqn.prior_agent as pr
+    conf = {
+        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/newerror_prior_DDQN',
+        'visualize': False,
+        'load': False,
+        'episodes': 300,
+        'duel': False,
+        'backup': 10
+    }
+
+    a = pr.Agent(conf)
+    a.learn()
+
+    conf = {
+        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/DQN',
+        'visualize': False,
+        'load': False,
+        'episodes': 300,
+        'duel': False,
+        'target': False
+    }
+
+    a = Agent(conf)
+    a.learn()
 
