@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.16 (TeX Live 2015/Debian) (preloaded format=pdflatex 2018.4.26)  30 JUN 2018 20:24
+This is pdfTeX, Version 3.14159265-2.6-1.40.16 (TeX Live 2015/Debian) (preloaded format=pdflatex 2018.4.26)  3 JUL 2018 02:02
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1006,18 +1006,18 @@ subscribe by emailing sympa@lirmm.fr with 'subscribe <list> <firstname name>'
 ) (./report.aux)
 \openout1 = `report.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 42.
-LaTeX Font Info:    ... okay on input line 42.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 35.
+LaTeX Font Info:    ... okay on input line 35.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 35.
+LaTeX Font Info:    ... okay on input line 35.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 35.
+LaTeX Font Info:    ... okay on input line 35.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 35.
+LaTeX Font Info:    ... okay on input line 35.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 35.
+LaTeX Font Info:    ... okay on input line 35.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 35.
+LaTeX Font Info:    ... okay on input line 35.
 
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
@@ -1119,65 +1119,140 @@ Package caption Info: End \AtBeginDocument code.
 Package pgfplots Warning: running in backwards compatibility mode (unsuitable t
 ick labels; missing features). Consider writing \pgfplotsset{compat=1.13} into 
 your preamble.
- on input line 42.
+ on input line 35.
 
-LaTeX Font Info:    Try loading font information for U+msa on input line 43.
+LaTeX Font Info:    Try loading font information for U+msa on input line 36.
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Try loading font information for U+msb on input line 43.
+LaTeX Font Info:    Try loading font information for U+msb on input line 36.
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-LaTeX Font Info:    Try loading font information for OMS+cmr on input line 52.
+LaTeX Font Info:    Try loading font information for OMS+cmr on input line 45.
 
 (/usr/share/texlive/texmf-dist/tex/latex/base/omscmr.fd
 File: omscmr.fd 2014/09/29 v2.5h Standard LaTeX font definitions
 )
 LaTeX Font Info:    Font shape `OMS/cmr/m/n' in size <10> not available
-(Font)              Font shape `OMS/cmsy/m/n' tried instead on input line 52.
+(Font)              Font shape `OMS/cmsy/m/n' tried instead on input line 45.
 
-Overfull \hbox (10.02574pt too wide) detected at line 78
+Overfull \hbox (10.02574pt too wide) detected at line 77
 []  \OT1/cmr/m/n/10 (1)
  []
 
 [1
 
 {/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}] [2]
-Overfull \hbox (15.0pt too wide) detected at line 173
+Overfull \hbox (15.0pt too wide) detected at line 170
 [][] 
  []
 
 
-Overfull \hbox (0.79999pt too wide) detected at line 173
+Overfull \hbox (0.79999pt too wide) detected at line 170
 |[]|
  []
 
-<model.png, id=24, 721.69624pt x 851.18pt>
+[3] <model.png, id=28, 721.69624pt x 851.18pt>
 File: model.png Graphic file (type png)
  <use model.png>
-Package pdftex.def Info: model.png used on input line 182.
+Package pdftex.def Info: model.png used on input line 187.
 (pdftex.def)             Requested size: 181.18439pt x 213.69064pt.
 
-<duel.png, id=26, 964.60374pt x 962.59625pt>
+<duel.png, id=30, 964.60374pt x 962.59625pt>
 File: duel.png Graphic file (type png)
  <use duel.png>
-Package pdftex.def Info: duel.png used on input line 187.
+Package pdftex.def Info: duel.png used on input line 192.
 (pdftex.def)             Requested size: 267.24939pt x 266.69032pt.
- [3] [4 <./model.png> <./duel.png>] (./report.aux) )
+
+<DDQN_reward.png, id=31, 417.7206pt x 315.0972pt>
+File: DDQN_reward.png Graphic file (type png)
+ <use DDQN_reward.png>
+Package pdftex.def Info: DDQN_reward.png used on input line 202.
+(pdftex.def)             Requested size: 221.95676pt x 167.42381pt.
+
+<DDQN_qval.png, id=32, 420.6114pt x 315.0972pt>
+File: DDQN_qval.png Graphic file (type png)
+ <use DDQN_qval.png>
+Package pdftex.def Info: DDQN_qval.png used on input line 205.
+(pdftex.def)             Requested size: 221.95676pt x 166.2747pt.
+
+<DDQN_game.png, id=33, 411.939pt x 315.0972pt>
+File: DDQN_game.png Graphic file (type png)
+ <use DDQN_game.png>
+Package pdftex.def Info: DDQN_game.png used on input line 208.
+(pdftex.def)             Requested size: 221.95676pt x 169.77492pt.
+
+<duel_DDQN_reward.png, id=34, 417.7206pt x 315.0972pt>
+File: duel_DDQN_reward.png Graphic file (type png)
+
+<use duel_DDQN_reward.png>
+Package pdftex.def Info: duel_DDQN_reward.png used on input line 215.
+(pdftex.def)             Requested size: 221.95676pt x 167.42381pt.
+
+<duel_DDQN_qval.png, id=35, 402.5439pt x 315.0972pt>
+File: duel_DDQN_qval.png Graphic file (type png)
+ <use duel_DDQN_qval.png>
+Package pdftex.def Info: duel_DDQN_qval.png used on input line 218.
+(pdftex.def)             Requested size: 221.95676pt x 173.74152pt.
+
+<duel_DDQN_game.png, id=36, 411.939pt x 315.0972pt>
+File: duel_DDQN_game.png Graphic file (type png)
+ <use duel_DDQN_game.png>
+Package pdftex.def Info: duel_DDQN_game.png used on input line 221.
+(pdftex.def)             Requested size: 221.95676pt x 169.77492pt.
+
+<prior_DDQN_reward.png, id=37, 417.7206pt x 315.0972pt>
+File: prior_DDQN_reward.png Graphic file (type png)
+
+<use prior_DDQN_reward.png>
+Package pdftex.def Info: prior_DDQN_reward.png used on input line 232.
+(pdftex.def)             Requested size: 221.95676pt x 167.42381pt.
+
+<prior_DDQN_qval.png, id=38, 411.2163pt x 315.0972pt>
+File: prior_DDQN_qval.png Graphic file (type png)
+
+<use prior_DDQN_qval.png>
+Package pdftex.def Info: prior_DDQN_qval.png used on input line 235.
+(pdftex.def)             Requested size: 221.95676pt x 170.07782pt.
+ <prior_DDQN_game.png, id=39, 411.939pt x 315.0972pt>
+File: prior_DDQN_game.png Graphic file (type png)
+
+<use prior_DDQN_game.png>
+Package pdftex.def Info: prior_DDQN_game.png used on input line 238.
+(pdftex.def)             Requested size: 221.95676pt x 169.77492pt.
+File: duel_DDQN_reward.png Graphic file (type png)
+ <use duel_DDQN_reward.png>
+Package pdftex.def Info: duel_DDQN_reward.png used on input line 245.
+(pdftex.def)             Requested size: 221.95676pt x 167.42381pt.
+File: duel_DDQN_qval.png Graphic file (type png)
+ <use duel_DDQN_qval.png>
+Package pdftex.def Info: duel_DDQN_qval.png used on input line 248.
+(pdftex.def)             Requested size: 221.95676pt x 173.74152pt.
+File: duel_DDQN_game.png Graphic file (type png)
+
+<use duel_DDQN_game.png>
+Package pdftex.def Info: duel_DDQN_game.png used on input line 251.
+(pdftex.def)             Requested size: 221.95676pt x 169.77492pt.
+ [4] [5 <./model.png> <./duel.png>] [6 <./DDQN_reward.png> <./DDQN_qval.png> <.
+/DDQN_game.png> <./duel_DDQN_reward.png> <./duel_DDQN_qval.png> <./duel_DDQN_ga
+me.png>] [7 <./prior_DDQN_reward.png> <./prior_DDQN_qval.png> <./prior_DDQN_gam
+e.png>] [8
+
+] (./report.aux) )
 (\end occurred inside a group at level 1)
 
 ### simple group (level 1) entered at line 1061 ({)
 ### bottom level 
 Here is how much of TeX's memory you used:
- 24734 strings out of 494953
- 603504 string characters out of 6180977
- 783069 words of memory out of 5000000
- 27575 multiletter control sequences out of 15000+600000
- 11802 words of font info for 46 fonts, out of 8000000 for 9000
+ 24783 strings out of 494953
+ 604511 string characters out of 6180977
+ 779068 words of memory out of 5000000
+ 27614 multiletter control sequences out of 15000+600000
+ 12148 words of font info for 47 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 55i,9n,77p,819b,2416s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 55i,10n,77p,960b,2417s stack positions out of 5000i,500n,10000p,200000b,80000s
 </usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/c
 mbx10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.
 pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></
@@ -1190,12 +1265,13 @@ t/fonts/type1/public/amsfonts/cm/cmr17.pfb></usr/share/texlive/texmf-dist/fonts
 ublic/amsfonts/cm/cmr9.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/am
 sfonts/cm/cmsy10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts
 /cm/cmsy5.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cms
-y7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm1
-0.pfb>
-Output written on report.pdf (4 pages, 274963 bytes).
+y7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmti10.pfb
+></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
+
+Output written on report.pdf (8 pages, 748190 bytes).
 PDF statistics:
- 81 PDF objects out of 1000 (max. 8388607)
- 56 compressed objects within 1 object stream
+ 117 PDF objects out of 1000 (max. 8388607)
+ 69 compressed objects within 1 object stream
  0 named destinations out of 1000 (max. 500000)
- 23 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 68 words of extra memory for PDF output out of 10000 (max. 10000000)
 
