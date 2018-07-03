@@ -101,50 +101,52 @@ In the following sub-sections I will explain the used technique and architecture
 
 %A state are simply the image shown on the screen while playing and the actions are defined in the game environment. Since I work with games on a simulated tv it is preferable to skip come frames in order to speed training avoiding not useful information, since many frames will be very similar. Each state is then converted to and gray scale image and then last 4 frames are staked up and fed into the neural network. This is done because adding temporal information to the agent will result in a better action choice. 
 %Moreover it should be taking into account that the networks tend to forgot past states and over-fit on current one while learning how to act. This problem is solved using a memory and a target network.
-\subsection{Experience replay memory}
-The approximation of Q function with an artificial neural network has a problem: while the networks learn how to act in the current state it also forgot the previous explored states. This does not allow the agent to learn how to act property. To overcome this problem the passed states are saved in a ring buffer memory with a fixed length. Those experience are random sampled each time the network is trained. A passed experience at time $t$ is saved as a tuple $(s_t, a_t, r_t, s_{t+1}, ending)$ where $ending$ indicates if the state is an ending one or not and $s_t$ are the states from $t-3$ to $t$ stacked. A subset of the memory is randomly extracted each time a network is trained. 
+\subsection{Memory of the past experiences}
+The approximation of Q function with an artificial neural network has a problem: while the agent learns how to act in the current state it also forgets the previous explored states. This does not allow the agent to learn how to act properly. To overcome this problem the passed states are saved in a ring buffer memory with a fixed length. These experiences are randomly sampled each time the network is trained. A passed experience at time $t$ is saved as a tuple $(s_t, a_t, r_t, s_{t+1}, ending)$ where $ending$ indicates if the state is an ending one or not and $s_t$ are the states from $t-3$ to $t$ stacked. A subset of the memory is randomly extracted each time a network is trained. 
 
-Fixing the length of the memory is crucial since a small one can not solve the agent's memory problem but a huge one will slow the learning process, and make this impossible in the worst case, since will contains too old states not useful in late train process.
+Fixing the length of the memory is crucial since a small one can not solve the agent's memory problem but a huge one will slow the learning process, and make this impossible in the worst case, since it will contain too old states not useful in the last phases of the training process.
 
-This method can be further improved by not randomly using a probability distribution. To do that I have implemented the proportional prioritized experience replay memory presented in [CITAZIONE]. The main idea is that a transition is more desirable in the train process if the network can learn more from that. In order to know how much the network can learn from a experience it is saved in the memory with an error:
+This method can be further improved by sampling from the memory using a probability distribution instead of doing it randomly. To do that I have implemented the proportional prioritized experience replay memory presented in \cite{prioritized}. The main idea is that a transition is more desirable in the training process if the network can learn more from it. In order to know how much the network can learn from an experience it is saved in the memory with an error:
 \[
 error = |Q(s,a) - T(s)|
 \]
-Where $T(s)$ is the estimated reward obtainable from $s$. If the learning process is not started $T(s)$ is simply the immediate reward $r$. Then this error is converted to a probability $p_i= (error_i+0.001)^\beta$ where $\beta$ weight how much the higher errors are more important than others.
-The sample process is the following. Each time a sample is needed a random number $s$, $0\le s \le \sum_i p_i$ is picked and the memory would be walked summing the probability of visited experience until the sum exceeds $s$, then the current transition is picked. To do that the memory should be sorted based on the $p_i$ since transitions with high error should be favorite. This is very expensive and another approach involve the used of a binary unsorted tree structure where each node contains the sum of its children. When a node is updated the change propagates through all the tree. With this structure the operation are faster and the maintenance easier. 
+Where $T(s)$ is the estimated reward obtainable from $s$. If the learning process is not started $T(s)$ is simply the immediate reward $r$. Then this error is converted to a probability $p_i= (error_i+0.001)^\beta$ where $\beta$ weights how much the higher errors are more important than the others.
+The sample process is the following. Each time a sample is needed a random number $s$, $0\le s \le \sum_i p_i$ is picked and the memory would be walked summing the probability of visited experiences until the sum exceeds $s$, then the current transition is picked. To do that the memory should be sorted based on the $p_i$ since transitions with high error should be favored. This is very expensive and another approach involves the using of a binary unsorted tree structure where each node contains the sum of its children. When a node is updated the change propagates through all the tree. With this structure the operations are faster and the maintenance easier. 
 %Prioritized replay introduces a bias that changes the distribution uncontrollably, this can be corrected by using importance-sampling (IS) weights $w_i = (NP_i)^{-\beta}$, annealing the $\beta$ linearly to 1, that value should be reached when the train process is near to the end. Those weights are normalized by 	$1/(\max_i w_i)$ and folded into the update of the network. 
 
 \subsection{Double DQN (target network)}
-To choose the action $a$ that should be picked in a state $s$ and to estimates the future reward obtainable in the new state the same network is used. This network is like a cat chasing its own tail since the network sets itself its targets and then follow them. This could lead to instability, oscillations or divergences. This problem can be solved by using another network to estimates the future reward. 
+To choose the action $a$ that should be picked in a state $s$ and to estimate the future reward obtainable in the new state, the same network is used. This network is like a cat chasing its own tail since the network sets itself its targets and then follow them. This could lead to instability, oscillations or divergences. This problem can be solved by using another network to estimates the future reward. 
 
 This new network is simply a copy of the first one frozen in time, so it won't be update using a train procedure, but after several steps the weights from the first network are copied in the second one. With this improvement the Q function becomes: 
 \[
 Q(s, a) = r + \gamma \max_{a'} Q'(s', a') 
 \]
 Where $Q'$ is estimated with the second network, called target network.
-A drawback is that it substantially slows down the learning process because change in the Q function is propagated only after the target network update. The intervals between updated are usually in order of thousands of steps, so this can really slow things down. But this improves the stability so it is worth to use it.
+A drawback is that it substantially slows down the learning process because change in the Q function is propagated only after the target network update. The intervals between updates are usually in order of thousands of steps, so this can really slow things down. But this improves the stability so it is worth to use it.
 
 \subsection{Duel DQN (DDQN)}
-Dueling DQN uses a specialized Head in order to separate Q into A (advantage) stream and a V stream. Adding this type of structure to the network head allows the network to better differentiate actions from one another, and significantly improves the learning. With this network the Q function becomes: 
+Dueling DQN uses a specialized Head in order to separate Q into A (advantage) stream and a V stream. Adding this type of structure to the network Head allows the network to better differentiate actions from one another, and significantly improves the learning. With this network the Q function becomes: 
 \[
 Q(s, a) = V(s) + (A(s, a) - \frac{1}{N} \sum_{a'}^{N} A(s, a'))
 \]
 
-The main improvement of this approach is the faster learning. In DQN the network update the Q values only for the specific actions taken in those states. This results in a slower learning as we do not learn the Q values for actions that were not taken yet. Dueling architecture starts learning the state-value even if only a single action has been taken in current state by decoupling the Q function. This architecture are shown in Figure 1b. 
+The main improvement of this approach is the faster learning. In DQN the network updates the Q values only for the specific actions taken in those states. This results in a slower learning as we do not learn the Q values for actions that were not taken yet. Dueling architecture starts learning the state-value even if only a single action has been taken in current state by decoupling the Q function. This architecture are shown in Figure 1b. 
 
 \section{Training process}
 
-As environment I have used the ai gym library with some preprocessing. The first one consist in transform the images into gray scale and resize them to $84\times84$. Then should be take into account that the Atari game are designed for TVs, so the update frequency are high and this could lead the experience memory to store too many similar images. To overcome this problem only the 4th image are taken, skipping the three before it. in addition to that a state is a stack of the last previously three not skipped states and the current one, giving the agent an overview of what happened before and help it in taking the right decision. This helps the agent to know, for example, where the ball is moving.
+As environment I have used the ai gym library with some preprocessing. The first one consists in transforming the images into gray scale and resizing them to $84\times84$. It should be then taken into account that the Atari games are designed for TVs, so the update frequency are high and this could lead the experience memory to store too many similar images. To overcome this problem only the 4th image is taken, skipping the three before it. In addition to this, it is defined a state that is the stack of the last previously three not skipped images and the current one, giving the agent an overview of what happened before and helping it in taking the right decision. This helps the agent to know, for example, where the ball is moving.
 
-The agent cannot starts to learn how to move in a state space that is unknown. So it is important to explore the state space, even if it is huge, before start to learn how to act in it, otherwise the agent will move randomly since it does not know how the game is structured. To do that I have implemented the following approaches, all used at the same time:
+The agent cannot starts to learn how to move in a state space that is unknown. So it is important to explore the state space, even if it is huge, before starting to learn how to act in it, otherwise the agent will move randomly since it does not know how the game is structured. To do that I have implemented the following approaches, all used at the same time:
 
 \begin{enumerate}
-\item Populate replay memory: the train process starts only when the memory contains a certain amount of experiences. This help the agent in knowing how the state space is structured before starts acting.
+\item Populating replay memory: the train process starts only when the memory contains a certain amount of experiences. This helps the agent in knowing how the state space is structured before it starts acting.
 
-\item No actions taken: at the beginning of the game the agent stay stationary for a random amount of frames from 1 to 30. Those frames are not added to the memory. This helps exploration and train speed, since the starting states are all very similar. 
+\item No actions taken: at the beginning of the game the agent stays stationary for a random amount of frames from 1 to 30. These frames are not added to the memory. This helps exploration and train speed, since the starting states are all very similar. 
 
-\item Random action pick: the probability of picking a random action in a state starts from a $\epsilon$ value and decrease linearly until a minimum is reached. This is the crucial exploration strategy since allow the agent to explore a large amount of states and associated actions while collecting the rewards. This is crucial since the agent need to know which are the useful action in the states.
+\item Random action picking: the probability of picking a random action in a state starts from a $\epsilon$ value and decrease linearly until a minimum is reached. This is the crucial exploration strategy since allows the agent to explore a large amount of states and associated actions while collecting the rewards. This is important since the agent needs to know which are the useful action in the states.
 \end{enumerate}
+If the memory is a prior one then after the update of the network the tree of probability should be updated. More than that if a target network has being used, then after the update of network weights these should be copied in the target network, if it is time to do it.
+
 The final algorithm is: 
 
 \begin{algorithm}[H]
@@ -168,16 +170,15 @@ The final algorithm is:
 \ENDFOR
 \end{algorithmic}
 \end{algorithm}
-If the memory is a prior one then after the update of the network the tree of probability should be updated. More than that if a target network is being used then after the update of network weights these should be copied in the target network if it is time to do it.
 
 \section{Empirical evaluations}
-To study which network is better I have fixed some parameters after some preliminary empirical evaluation. The length of the memory is set to 1 million, the reasons are two: the memory available is not enough and the states are all very similar when the agent starts to know how to play the game. The $\epsilon$ value starts from 1 and decrease in 1 million step and reach 0.02 as minimum. The batch sampled from the memory contains 96 transitions and the train process starts only after 10000 observations. Then the learning rate is set to $1e-4$ and Adam optimizer is used. These values are the same for all the networks. 
+To study which network is better I have fixed the parameters after some preliminary empirical evaluations. The length of the memory is set to 1 million and the reasons are two: the memory available on my machine is limited and the game is not hard and states tend to be all very similar. The $\epsilon$ value starts from 1 and decreases in 1 million step and reaches 0.02 as minimum. The batch sampled from the memory contains 96 transitions and the train process starts only after 10000 observations. Then the learning rate is set to $1e-4$ and Adam optimizer is used. These values are the same for all the networks. 
 
-The experiments are divided in two set. In both of them the agent uses the two proposed networks with a target one, but in the first set of experiment a simple memory is used, while in the second one the memory is a prioritized one. The goal is to study which combination is better for the given game. The evaluation criteria are the following: if the network reaches a stability, if the agent have learned how to beat the ai and in how many episodes needs to learn it. More that that each agent play the same game and a comparison of the reward, q values and stability are studied. The videos of those games are in the video folder delivered with this report. Each experiment consisting in the agent playing 300 games. The complete results can be viewed in figure 2 and 3.
+The experiments are divided in two set. In both of them the agent uses the two proposed networks with a target one, but in the first set of experiment a simple memory is used, while in the second one the memory is a prioritized one. The target network is used because it is know in the literature that using it leads to better results. The goal is to study which combination is better for the given game. The evaluation criteria are the following: if the network reaches stability, if the agent have learned how to beat the ai and how many episodes it needed to learn it. More that that each agent plays the same game and comparisons of the rewards, the q values and the stability reached are made. The videos of these games are in the video folder delivered with this report. Each experiment consists in the agent playing 300 games. The complete results can be viewed in figure 2 and 3.
 
-Comparing the agents resulting in the first experiment it is possible to notice how the one using a duel architecture can achieve a positive mean in less time, compared to the agent using simply DQN. This due the fact that it learns Q value of actions not explored yet, as told before. But the mean reaches the same value of the first network, in fact this network is very unstable in the end of the experiment and achieves a worst result in the final game. This could be due the fact that the parameters chosen are not good for this type of architecture, for example the decay of the learning rate is not enough or the memory size is too small and a bigger one is needed in order to help the network to remember the correct Q value estimation of each value. so even if the first network train is slower it should be preferable since leads to more stable results. The last mean value reached are 15.5 for the first network and 15 for the duel one.
+About the first experiment, it is possible to notice how the agent using a duel architecture can achieve a positive mean in less time, compared to the agent using simply DQN. This is due to the fact that it learns Q value of actions not explored yet, as told before. But at the end of the training process the mean reaches the same value of the first network, this due the fact that the duel network is very unstable in the end of the experiment. Moreover it achieves a worst result in the final game. This could be due to the fact that the parameters chosen are not good for this type of architecture, for example the decay of the learning rate is not enough or the memory size is too small and a bigger one is needed in order to help the network to remember the correct Q value estimation of each action, since it looks like the networks overestimate these values. So even if the first network train is slower it should be preferable since it leads to more stable results. In fact this is the architecture used in \cite{playAtariGame} and \cite{playAtariGameHuman}. The last mean value reached are 15.5 for the first network and 15 for the duel one.
 
-From the second set of experiment is expected that the agents can learn faster and better. In fact the prioritized DDQN reaches a positive mean with before the simply DDQN and the final score are way better: the prioritized networks reaches 17.5, two points more than the simply network. This leads to reaches better results even in the final game since the final score is 19, compared to 16 achieved by the DDQN. 
+From the second set of experiments we expect that the agents will learn faster and better due to the prioritized replay buffer. In fact the prioritized DDQN reaches a positive mean after 100 games, compared to 190 needed by DDQN with simply memory. The final achieved mean is 17,5. In addiction to this, the network looks very stable in the long period. This network reaches better results even in the final game since the final score is 19, compared to 16 achieved by the DDQN. Comparing the duel architectures seem that the one that uses the prioritized memory tends to stabilize the mean in the late training process, but without exceed 16,5, even if the score achieved in the final game is the highest one. So in the and the preferred architecture should be the DDQN since the train process takes less time and it is more stable. In addition to this a prioritized replay memory can increase the score and decrease the training process time, since it helps the network to reaches good and stable results in less time.
 \end{multicols}
 
 \FloatBarrier
@@ -242,15 +243,15 @@ From the second set of experiment is expected that the agents can learn faster a
 	\begin{subfigure}{0.49\textwidth}
 		\centering
 		\begin{minipage}{\linewidth}
-			\includegraphics[width=\linewidth]{duel_DDQN_reward.png}
+			\includegraphics[width=\linewidth]{prior_duel_DDQN_reward.png}
 		\end{minipage}\vfill
 		\begin{minipage}{\linewidth}
-			\includegraphics[width=\linewidth]{duel_DDQN_qval.png}
+			\includegraphics[width=\linewidth]{prior_duel_DDQN_qval.png}
 		\end{minipage}\vfill
 		\begin{minipage}{\linewidth}
-			\includegraphics[width=\linewidth]{duel_DDQN_game.png}
+			\includegraphics[width=\linewidth]{prior_duel_DDQN_game.png}
 		\end{minipage}	\vfill
-		\caption{duel DQN with target network results}
+		\caption{prior duel DQN with target network results}
 	\end{subfigure}
 	\setcounter{figure}{2}    
 	\captionof{figure}{Experiments using a prioritized memory buffer}
@@ -266,8 +267,11 @@ From the second set of experiment is expected that the agents can learn faster a
 	\bibitem{playAtariGameHuman}
 	Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu,
 	Joel Veness, Marc G Bellemare, Alex Graves, Martin Riedmiller, Andreas
-	K Fidjeland, Georg Ostrovski, et al. Human-level control through
-	deep reinforcement learning.
+	K Fidjeland, Georg Ostrovski, et al. \textit{Human-level control through	deep reinforcement learning.}
+	
+	\bibitem{prioritized}
+	Tom Schaul, John Quan, Ioannis Antonoglou, David Silver
+	\textit{Prioritized Experience Replay}
 	
 \end{thebibliography}
 \end{document}

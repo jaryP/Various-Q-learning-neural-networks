@@ -1,8 +1,60 @@
 import numpy as np
-import pickle
 from abc import ABC, abstractmethod
-from dqn.tree import SumTree
-from policy import EpsPolicy, AnnealedPolicy
+import numpy
+import pickle
+
+
+class SumTree:
+    write = 0
+
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.tree = numpy.zeros(2*capacity - 1)
+        self.data = numpy.zeros(capacity, dtype=object)
+
+    def _propagate(self, idx, change):
+        parent = (idx - 1) // 2
+
+        self.tree[parent] += change
+
+        if parent != 0:
+            self._propagate(parent, change)
+
+    def _retrieve(self, idx, s):
+        left = 2 * idx + 1
+        right = left + 1
+
+        if left >= len(self.tree):
+            return idx
+
+        if s <= self.tree[left]:
+            return self._retrieve(left, s)
+        else:
+            return self._retrieve(right, s-self.tree[left])
+
+    def total(self):
+        return self.tree[0]
+
+    def add(self, p, data):
+        idx = self.write + self.capacity - 1
+
+        self.data[self.write] = data
+        self.update(idx, p)
+
+        self.write += 1
+        if self.write >= self.capacity:
+            self.write = 0
+
+    def update(self, idx, p):
+        change = p - self.tree[idx]
+
+        self.tree[idx] = p
+        self._propagate(idx, change)
+
+    def get(self, s):
+        idx = self._retrieve(0, s)
+        dataIdx = idx - self.capacity + 1
+        return idx, self.tree[idx], self.data[dataIdx]
 
 
 class Buffer(ABC):
@@ -117,7 +169,6 @@ class PrioritizedMemory:
         size = kwargs['size']
         depth = kwargs.get('depth', 4)
         shape = kwargs.get('shape', (84, 84))
-        # self.beta = self.ann.linear_step()
 
         assert (len(self) > 0)
         if size > len(self):
@@ -128,14 +179,10 @@ class PrioritizedMemory:
 
         _states = np.zeros((size, depth, shape[0], shape[1]), dtype=np.uint8)
         _next_states = np.zeros((size, depth, shape[0], shape[1]), dtype=np.uint8)
-        _weights = np.zeros(size)
 
         _actions = np.zeros(size, dtype=np.uint8)
         _rewards = np.zeros(size)
         _is_done = np.zeros(size, dtype=bool)
-
-        # st = [t for t in self.tree.tree if t != 0]
-        # min_prob = np.min(st) / self.tree.total()
 
         for i in range(size):
             a = segment * i
@@ -143,22 +190,9 @@ class PrioritizedMemory:
             lower_bound = np.random.uniform(a, b)
             idx, p, d = self.tree.get(lower_bound)
             indexes.append(idx)
-            # prob = p/self.tree.total()
-            # _weights[i] = np.power(prob / min_prob, -self.beta)
-            # _weights[i] = np.power(p*len(st), -self.beta)
             _states[i] = np.asarray(d[0])
             _next_states[i] = np.asarray(d[3])
             _actions[i] = d[1]
             _rewards[i] = d[2]
             _is_done[i] = d[4]
-        # _weights *= (1/np.max(_weights))
         return _states, _actions, _rewards, _next_states, _is_done, indexes#, np.ones(size)
-
-    def save(self, path):
-        self.tree.save(path)
-
-    def load(self, path):
-        self.tree.load(path)
-        # with open(path, "rb") as file:
-        #     self.tree = pickle.load(file)
-        # self.maxlen = len(self)

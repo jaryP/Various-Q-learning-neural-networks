@@ -1,18 +1,15 @@
-import tqdm
 import numpy as np
 np.random.seed(19)
 import os
 os.environ['KERAS_BACKEND'] = 'tensorflow'
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
 import tensorflow as tf
-from dqn.memory_with_depth import SimpleMemory, PrioritizedMemory
+from memory import SimpleMemory, PrioritizedMemory
 import gym
 import policy
 import traceback
 import pickle
 from keras.engine.topology import Layer
-import time
 import matplotlib.pyplot as plt
 from dqn.wrappers import wrap_dqn
 from keras.layers import Dense, Lambda, Multiply, Flatten
@@ -23,6 +20,7 @@ from keras import backend as K
 import numpy as np
 import time
 from keras.utils import plot_model
+from gym.wrappers.monitoring.video_recorder import VideoRecorder
 
 
 class HeadSum(Layer):
@@ -49,8 +47,8 @@ class HeadSum(Layer):
         base_config = super(HeadSum, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-def huber_loss(y_true, y_pred, clip_value=1.0):
 
+def huber_loss(y_true, y_pred, clip_value=1.0):
     x = y_true - y_pred
     if np.isinf(clip_value):
         return .5 * K.square(x)
@@ -318,6 +316,11 @@ class Agent:
     ##################################################
 
     def plot(self):
+
+        name = os.path.join(self.log_dir, self.log_dir.rsplit('/', 1)[1])
+        manager = plt.get_current_fig_manager()
+        manager.resize(*manager.window.maxsize())
+
         rewards = self.results.get('rewards', [])
         qs = self.results.get('q_values', [])
 
@@ -325,21 +328,15 @@ class Agent:
         rewards_mean = [np.mean(rewards[max(0, i-50):i]) for i in range(1, len(rewards)+1)]
         rewards_mean_100 = [np.mean(rewards[max(0, i-100):i]) for i in range(1, len(rewards)+1)]
 
-        actions = {}
-        for i, action in enumerate(self.env.unwrapped.get_action_meanings()):
-            if action not in ['NOOP', 'LEFT', 'RIGHT']:
-                continue
-            actions.update({action: q_values[:, i]})
-
         eps = range(len(rewards))
 
         plt.plot(eps, [0]*len(eps))
-        plt.plot(eps, [15] * len(eps), 'k')
-        plt.plot(eps, [10] * len(eps), 'k')
-        plt.plot(eps, [5] * len(eps), 'k')
-        plt.plot(eps, [-5] * len(eps), 'k')
-        plt.plot(eps, [-10] * len(eps), 'k')
-        plt.plot(eps, [-15] * len(eps), 'k')
+        plt.plot(eps, [15] * len(eps), '--k')
+        plt.plot(eps, [10] * len(eps), '--k')
+        plt.plot(eps, [5] * len(eps), '--k')
+        plt.plot(eps, [-5] * len(eps), '--k')
+        plt.plot(eps, [-10] * len(eps), '--k')
+        plt.plot(eps, [-15] * len(eps), '--k')
 
         plt.plot(eps, rewards, label='reward')
         plt.plot(eps, rewards_mean, label='mean reward in last 50 games')
@@ -350,7 +347,8 @@ class Agent:
         plt.legend()
         plt.xlabel('episodes')
         plt.ylabel('reward')
-        plt.show()
+        plt.savefig('{}_reward.png'.format(name), bbox_inches='tight')
+        plt.close()
 
         plt.plot(eps, [0]*len(eps), 'k')
         plt.margins(x=0)
@@ -360,34 +358,59 @@ class Agent:
         plt.xlabel('episodes')
         plt.ylabel('q value')
         plt.legend()
-        plt.show()
+        plt.savefig('{}_qval.png'.format(name), bbox_inches='tight')
 
         observation = self.env.reset()
         done = False
 
-        q_values =[] # np.asarray([q[0][1] for q in qs])
+        q_values =[]
+        R = []
+        cr = 0
+
+        rec = VideoRecorder(self.env, base_path=os.path.join(self.log_dir, self.log_dir.rsplit('/', 1)[1]), )
         self.env.seed(0)
+
         while not done:
             action, q_vals = self.act(np.asarray(observation)[np.newaxis])
-            q_values.append(q_vals)
+            q_values.append(q_vals[action])
+
             next_state, reward, done, _ = self.env.step(action)
-
+            cr += reward
+            R.append(cr)
             observation = next_state
-
-            # self.env.render()
+            rec.capture_frame()
+        rec.close()
 
         q_values = np.asarray(q_values)
 
-        for i, action in enumerate(self.env.unwrapped.get_action_meanings()):
-            if action not in ['NOOP', 'LEFT', 'RIGHT']:
-                continue
-            plt.plot(range(len(q_values)), q_values[:, i], label=action)
+        f, axarr = plt.subplots(2, sharex=True)
+        axarr[0].plot(range(len(q_values)), q_values, label='Q value')
+        axarr[1].plot(range(len(q_values)), R, label='reward')
+        for i in range(1, len(R)):
+            if R[i] != R[i-1]:
+                axarr[0].axvline(x=i, ls='--', c="red", linewidth=1)
+                axarr[1].axvline(x=i, ls='--', c="red", linewidth=1)
 
-        plt.xlabel('episodes')
-        plt.ylabel('q value')
-        plt.legend()
-        plt.show()
+        axarr[0].set_xlabel('episodes')
+        axarr[0].set_ylabel('q value')
+        axarr[1].set_ylabel('cumulative reward')
+        axarr[1].set_xlabel('episodes')
 
+        plt.savefig('{}_game.png'.format(name), bbox_inches='tight')
+
+        R = 0
+        for i in range(100):
+            print(i, end=', ')
+            cr = 0
+            done = False
+            observation = self.env.reset()
+            while not done:
+                action, q_vals = self.act(np.asarray(observation)[np.newaxis])
+                next_state, reward, done, _ = self.env.step(action)
+                cr += reward
+                observation = next_state
+            R += cr
+        print('Mean in 300 games: ', R/300)
 
     def play(self):
 
@@ -505,53 +528,54 @@ class Agent:
 
 if __name__ == '__main__':
 
-    # conf = {
-    #     'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/DDQN',
-    #     'visualize': True,
-    #     'load': True,
-    #     'episodes': 300,
-    # }
-    #
-    # a = Agent(conf)
-    # a.plot()
-    # exit()
-    # a.learn()
-    # #
-    #
-    # conf = {
-    #     'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/target_duel_DDQN',
-    #     'visualize': True,
-    #     'load': True,
-    #     'episodes': 300,
-    #     'duel': True,
-    #     'backup': 25,
-    #     'target': True
-    # }
-    # a = Agent(conf)
-    # a.learn()
-
-    # conf = {
-    #     'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/prior_DDQN',
-    #     'visualize': False,
-    #     'load': True,
-    #     'episodes': 300,
-    #     'duel': False,
-    #     'backup': 25,
-    #     'prioritized': True
-    # }
-    #
-    # a = Agent(conf)
-    # a.learn()
-
     conf = {
-        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/prior_duel_DQN',
-        'visualize': False,
-        'load': True4,
+        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/DDQN',
+        'visualize': True,
+        'load': True,
         'episodes': 300,
-        'duel': True,
-        'target': True
     }
 
     a = Agent(conf)
-    a.learn()
+    a.plot()
+    # exit()
+    # a.learn()
+    #
+
+    conf = {
+        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/duel_DDQN',
+        'visualize': True,
+        'load': True,
+        'episodes': 300,
+        'duel': True,
+        'backup': 25,
+        'target': True
+    }
+    a = Agent(conf)
+    a.plot()
+
+    conf = {
+        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/prior_DDQN',
+        'visualize': False,
+        'load': True,
+        'episodes': 300,
+        'duel': False,
+        'backup': 25,
+        'prioritized': True
+    }
+
+    a = Agent(conf)
+    a.plot()
+
+    conf = {
+        'log_dir': '/media/jary/DATA/Uni/Ai/Iocchi/pong/prior_duel_DDQN',
+        'visualize': False,
+        'load': True,
+        'episodes': 300,
+        'duel': True,
+        'target': True,
+        'backup': 5
+    }
+
+    a = Agent(conf)
+    a.plot()
 
